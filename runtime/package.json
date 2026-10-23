@@ -1,0 +1,15 @@
+{
+  "name": "@unieai/runtime-image-deps",
+  "private": true,
+  "type": "module",
+  "description": "External npm deps the runtime apps/packages import (sandbox-runtime / collab-runtime). These are normally hoisted to the repo-root node_modules via workspaces, but the runtime Docker images only COPY runtime/ (no root manifest), so this standalone manifest lets the image `npm install` them. NOT a workspace member (the root globs are runtime/apps/* + runtime/packages/*), so it's inert for local dev. Versions pinned to the repo root.",
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1073.0",
+    "@aws-sdk/s3-request-presigner": "3.1048.0",
+    "dotenv": "16.6.1",
+    "js-yaml": "4.1.1"
+  },
+  "engines": {
+    "node": ">=22.15"
+  }
+}

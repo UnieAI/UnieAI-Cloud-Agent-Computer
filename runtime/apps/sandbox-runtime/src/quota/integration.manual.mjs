@@ -1,0 +1,45 @@
+// MANUAL integration (needs docker): real quota modules against a throwaway SeaweedFS —
+//   docker run -d --rm --name ava-d43-fconf --privileged --device /dev/fuse -p 127.0.0.1:38888:8888 -p 127.0.0.1:38333:8333 chrislusf/seaweedfs:latest server -dir=/data -filer -s3 -volume.max=8 -ip.bind=0.0.0.0
+//   curl -X PUT http://127.0.0.1:38333/shared ; node integration.manual.mjs   (verified 2026-10-02; see docs/ava/2026-10-02-cloud-workspace-quota-design.md)
+// integration: real modules + throwaway SeaweedFS (filer 38888, s3 38333, container ava-d43-fconf)
+process.env.S3_ENDPOINT = "http://127.0.0.1:38333"; process.env.S3_BUCKET = "shared"; process.env.S3_ACCESS_KEY = "x"; process.env.S3_SECRET_KEY = "y"; process.env.S3_REGION = "us-east-1"
+process.env.SANDBOX_ISOLATED_TENANTS = "user:t1,user:t2"; process.env.WORKSPACE_USER_QUOTA_BYTES = String(1024 * 1024)
+const W = "/home/ubuntu/ava-wt-quota/runtime/apps/sandbox-runtime/src/quota"
+const { createEnforcer, clearManagedLocks } = await import(`${W}/enforcer.mjs`)
+const { createWeedShellControl } = await import(`${W}/filer-control.mjs`)
+const { createTenantLister } = await import(`${W}/tenants.mjs`)
+const { createLimits } = await import(`${W}/limits.mjs`)
+const { measureWorkspaceBytes } = await import(`${W}/usage.mjs`)
+const { execFileSync } = await import("node:child_process")
+const control = createWeedShellControl({ container: "ava-d43-fconf", master: "localhost:9333" })
+const limits = createLimits()
+const logs = []
+const mk = () => createEnforcer({ log: (l, e, f) => logs.push(`${l} ${e} ${JSON.stringify(f ?? {})}`), listTenants: createTenantLister({ listIsolatedBuckets: () => control.listBuckets() }), measure: (o) => measureWorkspaceBytes(o), limits, control })
+const put = (path, bytes) => { try { return execFileSync("curl", ["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "PUT", "--data-binary", `@-`, `http://127.0.0.1:38888${path}`], { input: Buffer.alloc(bytes, 1) }).toString() } catch (e) { return "curl-err" } }
+const del = (path) => execFileSync("curl", ["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "DELETE", `http://127.0.0.1:38888${path}`]).toString()
+const say = (...a) => console.log(...a)
+
+say("1. t1 writes 2 MiB (limit 1 MiB), t2 writes 100 KiB; .platform sibling 2 MiB")
+put("/buckets/ws-user-t1/workspace/big.bin", 2 * 1024 * 1024); put("/buckets/ws-user-t2/workspace/s.bin", 100 * 1024); put("/buckets/ws-user-t1/.platform/state.bin", 2 * 1024 * 1024)
+// make the buckets visible to S3 listing (filer dirs under /buckets are buckets)
+const e1 = mk(); await e1.tick()
+say("   locked now:", [...await control.current()].join(", "))
+say("   t1 workspace write ->", put("/buckets/ws-user-t1/workspace/more.bin", 1000), "(want 507)")
+say("   t1 .platform write ->", put("/buckets/ws-user-t1/.platform/more.bin", 1000), "(want 201)")
+say("   t2 workspace write ->", put("/buckets/ws-user-t2/workspace/ok.bin", 1000), "(want 201)")
+say("2. t1 deletes big.bin; one tick later writes work again")
+say("   delete ->", del("/buckets/ws-user-t1/workspace/big.bin"))
+await e1.tick()
+say("   locked now:", [...await control.current()].join(", ") || "(none)")
+say("   t1 workspace write ->", put("/buckets/ws-user-t1/workspace/again.bin", 1000), "(want 201)")
+say("3. crash safety: a stale rule left by 'a previous process' for a tenant that no longer exists + one for t1 under its limit")
+execFileSync("docker", ["exec", "-i", "ava-d43-fconf", "weed", "shell"], { input: "fs.configure -locationPrefix=/buckets/ws-user-ghost/workspace/ -readOnly=true -apply\nfs.configure -locationPrefix=/buckets/ws-user-t1/workspace/ -readOnly=true -apply\nfs.configure -locationPrefix=/buckets/ws-user-t1/.platform/ -readOnly=true -apply\n" })
+say("   locked before restart:", [...await control.current()].join(", "))
+const e2 = mk(); await e2.tick()   // a fresh enforcer = restarted process, first tick
+say("   locked after first tick of a NEW enforcer:", [...await control.current()].join(", "), "(want only the unmanaged .platform rule)")
+say("4. emergency exit")
+put("/buckets/ws-user-t1/workspace/big2.bin", 2 * 1024 * 1024); await mk().tick()
+say("   locked:", [...await control.current()].join(", "))
+await clearManagedLocks(control)
+say("   after clearManagedLocks:", [...await control.current()].join(", "))
+say("logs:"); for (const l of logs) say("  ", l)

@@ -1,0 +1,8 @@
+{
+  "name": "@unieai/sandbox-runtime",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.15"
+  }
+}

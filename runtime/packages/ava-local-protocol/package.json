@@ -1,0 +1,26 @@
+{
+  "name": "@unieai/ava-local-protocol",
+  "private": true,
+  "type": "module",
+  "description": "Zero-dependency wire protocol, approval tokens, path containment and shell policy shared by the Rabi Local daemon, the app and sandbox-runtime.",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./canonical": "./src/canonical.mjs",
+    "./approval": "./src/approval.mjs",
+    "./contain": "./src/contain.mjs",
+    "./workspace": "./src/workspace.mjs",
+    "./shell-policy": "./src/shell-policy.mjs",
+    "./click-policy": "./src/click-policy.mjs",
+    "./click-resolve": "./src/click-resolve.mjs",
+    "./protocol": "./src/protocol.mjs",
+    "./device-approval": "./src/device-approval.mjs",
+    "./device-enrollment": "./src/device-enrollment.mjs",
+    "./device-ticket": "./src/device-ticket.mjs"
+  },
+  "scripts": {
+    "test": "node --test src/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22.15"
+  }
+}
