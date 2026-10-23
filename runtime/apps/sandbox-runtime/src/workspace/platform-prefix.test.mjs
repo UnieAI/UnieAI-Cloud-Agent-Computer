@@ -12,6 +12,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
@@ -122,11 +123,19 @@ test("group / org 也各自搬到自己的 .platform，不會跨租戶", () => {
   assert.equal(legacyManifestKey("group:g1"), "groups/g1/workspace/.manifest.json");
 });
 
-test("沙盒 image 不會再把 /workspace/.opencode 造回來", async () => {
+// 跨 repo 契約：沙盒範本映像（cm-agent-sandbox）屬於呼叫方 copilot-v2，不在 CAC 裡。
+// 單獨跑時設 COPILOT_V2_ROOT 指向那份 checkout；沒有就明說 skip。
+const SANDBOX_ENTRYPOINT = path.join(
+  process.env.COPILOT_V2_ROOT || path.resolve(import.meta.dirname, "../../../../.."),
+  "docker/cm-agent-sandbox/entrypoint.sh",
+);
+const ENTRYPOINT_MISSING = existsSync(SANDBOX_ENTRYPOINT) ? false : "沙盒範本映像在 copilot-v2；設 COPILOT_V2_ROOT 才跑得到這個跨 repo 契約";
+
+test("沙盒 image 不會再把 /workspace/.opencode 造回來", { skip: ENTRYPOINT_MISSING }, async () => {
   // entrypoint.sh 的 `mkdir -p /workspace/.opencode` + 唯讀 sub-mount 一旦還在，
   // 就算 S3 那邊搬乾淨了，模型還是會看到一個空的 .opencode/（正是 roy 回報的畫面）。
   const repoRoot = path.resolve(import.meta.dirname, "../../../../..");
-  const entrypoint = await fs.readFile(path.join(repoRoot, "docker/cm-agent-sandbox/entrypoint.sh"), "utf8");
+  const entrypoint = await fs.readFile(SANDBOX_ENTRYPOINT, "utf8");
   assert.ok(
     !/mkdir\s+-p\s+"?\$MOUNT_POINT\/\.opencode/.test(entrypoint),
     "entrypoint.sh 還在 mkdir /workspace/.opencode",

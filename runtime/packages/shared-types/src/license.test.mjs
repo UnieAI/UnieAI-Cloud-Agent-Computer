@@ -83,7 +83,10 @@ test("rejects a tampered signature", () => {
   const { publicKey, privateKey } = createTestKeys();
   const signedLicense = createSignedLicense(createPayload(), privateKey);
   const parts = signedLicense.split(".");
-  parts[2] = `${parts[2].slice(0, -1)}${parts[2].endsWith("A") ? "B" : "A"}`;
+  // Flip a middle character: the last base64url character also carries padding bits, so
+  // A↔B there can leave the decoded signature unchanged (≈1 run in 6 passed as "valid").
+  const mid = Math.floor(parts[2].length / 2);
+  parts[2] = `${parts[2].slice(0, mid)}${parts[2][mid] === "A" ? "B" : "A"}${parts[2].slice(mid + 1)}`;
 
   const license = resolveLicenseText(parts.join("."), { publicKeyPem: publicKey });
 

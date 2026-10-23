@@ -17,12 +17,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const RUNTIME_REGISTRY = path.join(here, "registry.mjs");
-const ENGINE_OPERATOR = path.resolve(here, "../../../ava-engine/src/terminal-operator.mjs");
+// 跨 repo 契約：引擎在 copilot-v2。CAC 單獨跑時設 COPILOT_V2_ROOT 指向那份 checkout，
+// 沒有就明說 skip —— 不讀到東西就算過，等於沒有這個測試。
+const ENGINE_OPERATOR = process.env.COPILOT_V2_ROOT
+  ? path.join(process.env.COPILOT_V2_ROOT, "runtime/apps/ava-engine/src/terminal-operator.mjs")
+  : path.resolve(here, "../../../ava-engine/src/terminal-operator.mjs");
+const ENGINE_MISSING = existsSync(ENGINE_OPERATOR) ? false : "copilot-v2 的 ava-engine 不在這裡；設 COPILOT_V2_ROOT 才跑得到這個跨 repo 契約";
 
 /** `const X = Number(process.env.AVA_TERMINAL_REAP_GRACE_MS || <預設>)` 裡的那兩個東西。 */
 function graceDeclaration(file) {
@@ -37,7 +43,7 @@ function graceDeclaration(file) {
   return { envVar: m[1], defaultMs: value };
 }
 
-test("引擎與 runtime 用同一個環境變數、同一個預設寬限期", () => {
+test("引擎與 runtime 用同一個環境變數、同一個預設寬限期", { skip: ENGINE_MISSING }, () => {
   const engine = graceDeclaration(ENGINE_OPERATOR);
   const runtime = graceDeclaration(RUNTIME_REGISTRY);
 

@@ -42,3 +42,14 @@ STORAGE_LOCAL_FS=1 STORAGE_LOCAL_FS_ROOT=/var/lib/cac SANDBOX_INTERNAL_TOKEN=…
 cd runtime && npm install && cd ..
 node --test $(find runtime -name '*.test.mjs' -not -path '*/node_modules/*')
 ```
+
+Three tests are cross-repo contracts with copilot-v2: the engine's terminal grace
+period, the daemon's redaction kinds, and the sandbox template image's entrypoint.
+Standalone they **skip with a reason**. Point `COPILOT_V2_ROOT` at a copilot-v2
+checkout to run them:
+
+```bash
+COPILOT_V2_ROOT=~/worktrees/copilot-v2 npm test
+```
+
+The Docker round-trip test runs only with `DOCKER_INTEGRATION=1`.

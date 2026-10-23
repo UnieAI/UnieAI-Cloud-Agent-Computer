@@ -1,0 +1,13 @@
+{
+  "name": "@unieai/cloud-agent-computer",
+  "private": true,
+  "type": "module",
+  "description": "Root manifest for the repo-level scripts (scripts/, read by tests). The service's own deps are in runtime/package.json.",
+  "scripts": {
+    "test": "node --test --test-timeout=60000 $(find runtime -name '*.test.mjs' -not -path '*/node_modules/*' | sort)"
+  },
+  "dependencies": {
+    "dotenv": "16.6.1"
+  },
+  "engines": { "node": ">=22.15" }
+}
