@@ -4,10 +4,14 @@
   "type": "module",
   "description": "Root manifest for the repo-level scripts (scripts/, read by tests). The service's own deps are in runtime/package.json.",
   "scripts": {
-    "test": "node --test --test-timeout=60000 $(find runtime -name '*.test.mjs' -not -path '*/node_modules/*' | sort)"
+    "test": "node --test --test-timeout=60000 $(find runtime scripts -name '*.test.mjs' -not -path '*/node_modules/*' | sort)",
+    "self-check": "node scripts/self-check.mjs",
+    "check": "npm run self-check && npm test"
   },
   "dependencies": {
     "dotenv": "16.6.1"
   },
-  "engines": { "node": ">=22.15" }
+  "engines": {
+    "node": ">=22.15"
+  }
 }

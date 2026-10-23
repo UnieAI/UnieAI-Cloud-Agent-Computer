@@ -14,6 +14,7 @@ loadEnv();
 import { config, liveWorkspaceMode } from "./config.mjs";
 import { log } from "./shared/log.mjs";
 import { verifyInternalToken, resolveCallerUserId, resolveCallerIsPlatformAdmin } from "./shared/auth.mjs";
+import { assertLegacyIdentity, callerOwnsEntry, isNamespacedRoute, namespaceBody, namespaceRequest, stripResponse } from "./shared/callers.mjs";
 import { SandboxError, toErrorPayload } from "./shared/error.mjs";
 import { getOrCreateRequestId } from "./shared/trace.mjs";
 
@@ -69,6 +70,16 @@ import { notifySkillChange, skillNameOf, probeSkillSync } from "./workspace/skil
 const SHARED_OWNER_RE = /^(?:group|org):[A-Za-z0-9_-]+$/;
 
 /**
+ * Is ownership enforced for this request? Always for a namespaced caller
+ * (shared/callers.mjs): its key is the only thing vouching for its users, so
+ * there is no "warn-only" phase to roll through. The shared token follows
+ * SANDBOX_ENFORCE_OWNERSHIP as before.
+ */
+function enforcing(req) {
+  return Boolean(req?.cacCaller) || Boolean(config.enforceOwnership);
+}
+
+/**
  * Resolve the S3 workspace OWNER for a sandbox-less user-workspace route.
  * The path `:userId` always identifies the real user (ownership enforcement +
  * memory attribution stay per-user); a trusted `x-workspace-owner` header
@@ -115,6 +126,8 @@ function publicItem(entry, now = Date.now()) {
 
 function writeJson(res, status, body, requestId) {
   if (res.writableEnded) return;
+  // A namespaced caller never sees its own `<namespace>--` prefix.
+  if (res.cacCaller) body = stripResponse(body, res.cacCaller);
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "x-request-id": requestId || ""
@@ -155,11 +168,21 @@ async function readJsonBody(req) {
     req.on("end", () => {
       const raw = Buffer.concat(chunks).toString("utf8").trim();
       if (!raw) return resolve({});
+      let parsed;
       try {
-        resolve(JSON.parse(raw));
+        parsed = JSON.parse(raw);
       } catch (err) {
-        reject(new SandboxError("bad_request", `Invalid JSON body: ${err.message}`, 400));
+        return reject(new SandboxError("bad_request", `Invalid JSON body: ${err.message}`, 400));
       }
+      // Identity in a body is rewritten the same way as identity in the URL
+      // (shared/callers.mjs); a refusal here is a 403, not a parse error.
+      try {
+        if (req.cacCaller) parsed = namespaceBody(parsed, req.cacCaller);
+        else assertLegacyIdentity({ req, body: parsed });
+      } catch (err) {
+        return reject(err);
+      }
+      resolve(parsed);
     });
     req.on("error", reject);
   });
@@ -290,12 +313,13 @@ const routes = [
       // it — yet it lists every tenant's sandbox/user/session. Under enforcement,
       // filter to the caller's own sandboxes (empty when no identity asserted) so
       // it can't be used to enumerate the tenant roster.
-      let entries = listActive();
+      // A caller lists only its own namespace's sandboxes (the shared token: the un-namespaced ones).
+      let entries = listActive().filter((e) => callerOwnsEntry(req.cacCaller, e));
       // 後台管理員是這條路的**例外**：「現在有哪些沙盒活著」本來就是跨租戶的問題，
       // 濾成自己那幾個等於什麼都看不到。是不是管理員由 app 的 requireCapability
       // 決定，這裡只驗簽章（見 resolveCallerIsPlatformAdmin）。
       const isAdmin = resolveCallerIsPlatformAdmin(req);
-      if (config.enforceOwnership && !isAdmin) {
+      if (enforcing(req) && !isAdmin) {
         const caller = resolveCallerUserId(req, ctx.auth?.claims);
         entries = caller ? entries.filter((e) => e.userId === caller) : [];
       }
@@ -342,8 +366,8 @@ const routes = [
       };
       // Same cross-tenant concern as the list route: under enforcement, only
       // stream the caller's own sandbox lifecycle events (no identity → nothing).
-      const caller = config.enforceOwnership ? resolveCallerUserId(req, ctx.auth?.claims) : null;
-      const visible = (entry) => !config.enforceOwnership || (!!caller && entry?.userId === caller);
+      const caller = enforcing(req) ? resolveCallerUserId(req, ctx.auth?.claims) : null;
+      const visible = (entry) => callerOwnsEntry(req.cacCaller, entry) && (!enforcing(req) || (!!caller && entry?.userId === caller));
       const now = Date.now();
       send("snapshot", {
         now_ms: now,
@@ -409,7 +433,12 @@ const routes = [
       // `user_id`, so a caller must not be able to mint a sandbox owned by a
       // user they aren't acting for. When enforcing, require the on-behalf-of
       // identity to match the requested owner.
-      if (config.enforceOwnership) {
+      // A namespaced caller's sandbox is traced back to it through the user id
+      // (shared/callers.mjs callerOwnsEntry), so it cannot allocate anonymously.
+      if (req.cacCaller && !user_id) {
+        throw new SandboxError("bad_request", "user_id is required for this caller", 400, { reason: "user_id_required" });
+      }
+      if (enforcing(req)) {
         const caller = resolveCallerUserId(req, ctx.auth?.claims);
         if (!caller || (user_id && caller !== String(user_id))) {
           throw new SandboxError("forbidden", "allocate ownership check failed", 403, {
@@ -1282,7 +1311,7 @@ const routes = [
       // persist takes the target userId from the BODY — so a caller could ask to
       // persist their own sandbox's artifacts under a VICTIM's user prefix. When
       // enforcing, require the body userId to match the caller (== sandbox owner).
-      if (config.enforceOwnership) {
+      if (enforcing(req)) {
         const caller = resolveCallerUserId(req, ctx.auth?.claims);
         if (body?.user_id && caller !== String(body.user_id)) {
           throw new SandboxError("forbidden", "artifacts/persist ownership check failed", 403, {
@@ -1409,6 +1438,35 @@ async function handleRequest(req, res) {
       return writeError(res, new SandboxError("unauthorized", "Invalid or missing internal token", 401, { reason: auth.reason }), requestId);
     }
 
+    // Caller namespaces (shared/callers.mjs). A namespaced caller is held to
+    // its route allowlist and has every identity it presents rewritten into
+    // its namespace before anything below reads it; the shared token may not
+    // name an id inside someone else's namespace.
+    try {
+      if (auth.caller) {
+        if (!isNamespacedRoute(url.pathname)) {
+          throw new SandboxError("forbidden", `${req.method} ${url.pathname} is operator-only`, 403, { reason: "caller_route_forbidden" });
+        }
+        namespaceRequest(req, params, auth.caller);
+        req.cacCaller = auth.caller;
+        res.cacCaller = auth.caller;
+      } else {
+        assertLegacyIdentity({ req, params });
+      }
+      // A sandbox id from another caller reads as unknown (404), not forbidden:
+      // a 403 would confirm that the id exists.
+      if (params.id && url.pathname.startsWith("/v1/sandboxes/")) {
+        let entry = null;
+        try { entry = getActive(params.id); } catch { /* unknown: the handler answers 404 */ }
+        if (entry && !callerOwnsEntry(req.cacCaller, entry)) {
+          throw new SandboxError("not_found", `sandbox ${params.id} not found`, 404);
+        }
+      }
+    } catch (err) {
+      log("warn", "sandbox.caller_rejected", { requestId, path: url.pathname, caller: auth.caller?.id || "shared", reason: err?.details?.reason || err?.code });
+      return writeError(res, err, requestId);
+    }
+
     // Cross-tenant ownership backstop. The internal token only proves the
     // caller is the engine; it does NOT prove WHICH user they act for. Derive
     // the targeted resource's scope from the route's URL params and require the
@@ -1448,7 +1506,7 @@ async function handleRequest(req, res) {
 
       if (resourceExists) {
         const mismatch = !caller || owner !== caller;
-        if (config.enforceOwnership) {
+        if (enforcing(req)) {
           if (mismatch) {
             log("warn", "sandbox.ownership_denied", {
               requestId, path: url.pathname, scope: ownerCheck,
@@ -1654,4 +1712,6 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 }
 
-export { server, handleRequest, assertSandboxModeSafe };
+// matchRoute is exported for tests that must prove a route exists before
+// asserting it is refused (a missing route answers 404 for every caller).
+export { server, handleRequest, assertSandboxModeSafe, matchRoute };

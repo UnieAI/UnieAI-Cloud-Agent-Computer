@@ -28,6 +28,23 @@ Not here on purpose: the sandbox **template image**. copilot-v2's
 built from copilot-v2's `runtime/apps/ava-local`), so it belongs to that caller.
 CAC runs whatever image the caller configures (`SANDBOX_DOCKER_IMAGE`).
 
+## Callers (P1)
+
+The shared `SANDBOX_INTERNAL_TOKEN` is the legacy caller (copilot-v2); its ids are
+used as they are. Every other caller gets its own key and namespace:
+
+```bash
+KEY=$(openssl rand -base64 32)
+echo -n "$KEY" | sha256sum   # configure the hash, hand the key to the caller
+CAC_CALLERS='[{"id":"studio","namespace":"studio","key_sha256":"<that hash>"}]'
+```
+
+A namespaced caller's users, sessions and workspace owners are kept apart from
+every other caller's, even when the ids collide. Ownership is always enforced
+for it, and operator routes (pool policy, quota limits, the all-tenant event
+stream, SSH checks, the Rabi Local relay) stay with the shared token.
+See `runtime/apps/sandbox-runtime/src/shared/callers.mjs`.
+
 ## Run
 
 ```bash
@@ -39,8 +56,8 @@ STORAGE_LOCAL_FS=1 STORAGE_LOCAL_FS_ROOT=/var/lib/cac SANDBOX_INTERNAL_TOKEN=…
 ## Test
 
 ```bash
-cd runtime && npm install && cd ..
-node --test $(find runtime -name '*.test.mjs' -not -path '*/node_modules/*')
+npm install && (cd runtime && npm install)
+npm run check        # self-check + every test
 ```
 
 Three tests are cross-repo contracts with copilot-v2: the engine's terminal grace

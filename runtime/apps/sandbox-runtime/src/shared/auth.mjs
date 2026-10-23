@@ -1,3 +1,4 @@
+import { callerForToken, loadCallers } from "./callers.mjs";
 import crypto from "node:crypto";
 
 import { config } from "../config.mjs";
@@ -84,7 +85,8 @@ function verifyHs256Jwt(token, secret) {
  * 正在跑的東西。
  */
 export function verifyInternalToken(req, { expectedSessionId = null } = {}) {
-  if (!config.internalToken) {
+  const callers = loadCallers();
+  if (!config.internalToken && !callers.length) {
     return { ok: false, reason: "internal_token_not_configured" };
   }
   const bearer = getBearerToken(req.headers);
@@ -95,9 +97,14 @@ export function verifyInternalToken(req, { expectedSessionId = null } = {}) {
   }
 
   // Direct bearer match — pre-existing behaviour, allows ops scripts etc.
-  if (safeEqual(supplied, config.internalToken)) {
+  if (config.internalToken && safeEqual(supplied, config.internalToken)) {
     return { ok: true };
   }
+
+  // A namespaced caller's own key (shared/callers.mjs). Its identity is
+  // rewritten into its namespace by the server before any route runs.
+  const caller = callerForToken(supplied, callers);
+  if (caller) return { ok: true, caller };
 
   // JWT path — useful when llm-runtime mints per-request tokens carrying
   // tenant context. **只有 SANDBOX_JWT_SECRET 有設才收**，見檔頭：拿共用的
@@ -143,6 +150,13 @@ const REQUIRE_SIGNED_IDENTITY = /^(1|true)$/i.test(String(process.env.SANDBOX_RE
  * Returns the userId string, or null when the caller asserted no identity.
  */
 export function resolveCallerUserId(req, claims = null) {
+  // A namespaced caller vouches for its own users with its key; the header was
+  // already rewritten into its namespace (shared/callers.mjs namespaceRequest),
+  // and any app-signed identity it sent was dropped there.
+  if (req?.cacCaller) {
+    const h = req.headers?.["x-sandbox-user-id"];
+    return typeof h === "string" && h.trim() ? h.trim() : null;
+  }
   const fromJwt = claims?.user_id || claims?.tenant_id || null;
   if (fromJwt) return String(fromJwt).trim() || null;
 
@@ -235,6 +249,7 @@ function noteUnsignedIdentity(req, idJwt) {
  * 的事（多租戶身分一律歸 app，見 CLAUDE.md）。這裡只驗「這個 scope 是不是我們簽的」。
  */
 export function resolveCallerIsPlatformAdmin(req) {
+  if (req?.cacCaller) return false; // operator powers stay with the shared token
   if (IDENTITY_SECRET) {
     const raw = req?.headers?.["x-sandbox-user-jwt"];
     if (typeof raw !== "string" || !raw.trim()) return false;
