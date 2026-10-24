@@ -46,8 +46,15 @@ compose() { docker compose -f "$COMPOSE_DIR/docker-compose.yml" --env-file "$ENV
 cleanup() {
   local code=$?
   if [ $code -ne 0 ]; then echo "--- cac logs (tail)"; compose logs --no-color --tail 60 cac 2>/dev/null | grep -v '"level":"debug"' | tail -60 || true; fi
-  docker ps -aq --filter "label=sandbox-id" --filter "network=$PROJECT-sandbox" | xargs -r docker rm -f >/dev/null 2>&1 || true
   compose down -v --remove-orphans >/dev/null 2>&1 || true
+  # `down` stops cac, whose shutdown removes its sandboxes. Any still here is a
+  # failure (the first run left one, unnoticed: this line filtered on a label
+  # that does not exist). Removed by its instance label, never by guesswork.
+  LEFT="$(docker ps -aq --filter label=unieai.sandbox=1 --filter "label=unieai.instance=$PROJECT")"
+  if [ -n "$LEFT" ]; then
+    echo "FAIL: sandboxes left running after compose down: $LEFT"; echo "$LEFT" | xargs -r docker rm -f >/dev/null 2>&1 || true
+    code=1
+  fi
   docker network rm "$PROJECT-sandbox" >/dev/null 2>&1 || true
   # The mounts propagate to the host. After `down` there must be none left.
   if grep -q " $CAC_MOUNT_ROOT" /proc/mounts; then
@@ -133,5 +140,12 @@ echo "ok  no snapshot, invalidation or reconcile warnings"
 echo "== release"
 curl -sf "${H[@]}" -X DELETE "$BASE/v1/sandboxes/$SBX" >/dev/null || fail "release"
 echo "ok  released"
+
+echo "== a sandbox left for shutdown"
+# Not released: compose down must remove it (checked in cleanup).
+curl -sf "${H[@]}" -H 'content-type: application/json' -X POST "$BASE/v1/sandboxes" \
+  -d '{"user_id":"u1","session_id":"smoke-2","workspace_mode":"user"}' >/dev/null || fail "second allocate"
+[ -n "$(docker ps -q --filter label=unieai.sandbox=1 --filter "label=unieai.instance=$PROJECT")" ] || fail "the sandbox does not carry this deployment's instance label"
+echo "ok  allocated, labelled unieai.instance=$PROJECT"
 echo
 echo "bundle smoke: PASS"

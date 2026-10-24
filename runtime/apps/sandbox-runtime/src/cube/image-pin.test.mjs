@@ -189,18 +189,19 @@ test("a create failure is reported and left for the next reconcile tick — boot
 test("reapOrphanContainers' own filter does not sweep up the pin, using ITS real implementation", async () => {
   const { reapOrphanContainers } = await import("./docker.mjs");
   const containers = {
-    "sandbox-abc": { labels: { "unieai.sandbox": "1" } },
+    "sandbox-abc": { labels: { "unieai.sandbox": "1", "unieai.instance": "cac" } },
     [PIN_CONTAINER_NAME]: { labels: { [PIN_LABEL_KEY]: PIN_LABEL_VALUE } },
   };
   const removed = [];
   const dockerRunner = async (args) => {
     if (args[0] === "ps") {
-      const filterArg = args[args.indexOf("--filter") + 1]; // "label=K=V"
-      const eq = filterArg.indexOf("=", "label=".length);
-      const key = filterArg.slice("label=".length, eq);
-      const value = filterArg.slice(eq + 1);
+      // Every --filter must match, as `docker ps` ANDs label filters.
+      const filters = args.flatMap((a, i) => (args[i - 1] === "--filter" ? [a] : [])).map((f) => {
+        const eq = f.indexOf("=", "label=".length);
+        return [f.slice("label=".length, eq), f.slice(eq + 1)];
+      });
       return Object.entries(containers)
-        .filter(([, c]) => c.labels[key] === value)
+        .filter(([, c]) => filters.every(([k, v]) => c.labels[k] === v))
         .map(([name]) => name)
         .join("\n");
     }

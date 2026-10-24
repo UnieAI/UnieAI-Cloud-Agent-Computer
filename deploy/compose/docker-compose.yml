@@ -20,6 +20,8 @@ services:
       context: ../..
       dockerfile: docker/sandbox-runtime/Dockerfile
     restart: unless-stopped
+    # Shutdown removes this deployment's sandboxes, then unmounts (up to ~11 s).
+    stop_grace_period: 20s
     env_file: [ .env ]
     environment:
       SANDBOX_PORT: "4020"
@@ -34,6 +36,9 @@ services:
       SANDBOX_S3_CREDENTIALS: omit
       SANDBOX_DOCKER_IMAGE: ${SANDBOX_DOCKER_IMAGE:-cac-sandbox:local}
       SANDBOX_DOCKER_NETWORK: ${CAC_PROJECT:-cac}-sandbox
+      # Labels this deployment's sandboxes; boot and shutdown remove only these,
+      # never another deployment's on the same dockerd.
+      SANDBOX_INSTANCE: ${CAC_PROJECT:-cac}
       CAC_SANDBOX_SUBNET: ${CAC_SANDBOX_SUBNET:-10.89.1.0/24}
     # The sandbox network is created here, not declared below: compose does not
     # create a network no service joins (measured), and nothing may join this

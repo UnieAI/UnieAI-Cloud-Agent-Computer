@@ -1,0 +1,9 @@
+# Build context hygiene for docker/*/Dockerfile (context = repo root).
+# The images install their own dependencies (npm ci); a host-built node_modules
+# must never ride in — it can be for another platform, or another lockfile.
+**/node_modules
+.git
+# A real deployment's settings, with the store's keys in them.
+deploy/compose/.env
+**/.env
+**/*.log

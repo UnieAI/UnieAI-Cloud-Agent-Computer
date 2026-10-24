@@ -1625,6 +1625,9 @@ startReaper();
 // consuming host RAM — kill them now. Fire-and-forget; the workspace itself is
 // durable in S3 so nothing user-visible is lost.
 if (config.mode === "docker") {
+  // Fail the boot on a bad SANDBOX_INSTANCE, rather than on the first allocate.
+  const { resolveSandboxInstance } = await import("./cube/docker.mjs");
+  resolveSandboxInstance();
   import("./cube/docker.mjs")
     .then(({ reapOrphanContainers }) => reapOrphanContainers())
     .catch((err) => log("warn", "sandbox.orphan_reap_skipped", { error: err?.message || String(err) }));
@@ -1709,12 +1712,26 @@ function shutdown(signal) {
   // `docker compose down` left dead FUSE mounts there until the next boot's
   // reconcile. Capped so a hung unmount cannot hold the stop past docker's
   // 10 s; the reconcile at boot still clears whatever this misses.
-  const unmount = import("./cube/index.mjs")
+  //
+  // The sandboxes go first. They are siblings on the host's dockerd, so they
+  // outlive this process: `compose down` used to leave them running, each one
+  // holding a mount that was about to die (bundle smoke 2026-10-24). And their
+  // binds keep the mounts busy, so unmounting before removing them fails.
+  // Only this deployment's (reapOrphanContainers filters on its instance).
+  const capped = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(r, ms).unref())]);
+  const removeSandboxes = config.mode === "docker"
+    ? import("./cube/docker.mjs")
+      .then(({ reapOrphanContainers }) => reapOrphanContainers({ reason: "shutdown" }))
+      .catch((err) => log("warn", "sandbox.shutdown_reap_failed", { error: err?.message || String(err) }))
+    : Promise.resolve();
+  const unmount = () => import("./cube/index.mjs")
     .then(({ getHostMountManager }) => getHostMountManager()?.shutdown?.())
     .catch((err) => log("warn", "sandbox.host_mount_shutdown_failed", { error: err?.message || String(err) }));
-  Promise.race([unmount, new Promise((r) => setTimeout(r, 5000).unref())])
+  capped(removeSandboxes, 6000)
+    .then(() => capped(unmount(), 5000))
     .finally(() => server.close(() => process.exit(0)));
-  setTimeout(() => process.exit(1), 8000).unref();
+  // Past both caps. The compose bundle gives the stop 20 s (stop_grace_period).
+  setTimeout(() => process.exit(1), 13_000).unref();
 }
 
 process.on("SIGINT", () => shutdown("SIGINT"));

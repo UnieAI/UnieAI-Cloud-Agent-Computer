@@ -448,6 +448,8 @@ export function buildDockerRunArgs({
   runtime = "",
   // 額外加入的群組（數字 gid）。host 掛載模式下是工作區群組，見 workspace-group.mjs。
   groupAdd = [],
+  // Which deployment this sandbox belongs to (resolveSandboxInstance).
+  instance = resolveSandboxInstance(),
   // `uid:gid` to run as, or null for the image's own USER. Set only for the s3
   // mount driver, where the sandbox must own its files (DEFAULT_S3_MOUNT_UID).
   user = null,
@@ -460,6 +462,9 @@ export function buildDockerRunArgs({
     // boot-time reaper (reapOrphanContainers) and any external tooling filter
     // on unieai.sandbox=1 instead of guessing by name.
     "--label", "unieai.sandbox=1",
+    // Whose sandbox: the reaper removes only its own instance's. See
+    // resolveSandboxInstance.
+    "--label", `${SANDBOX_INSTANCE_LABEL}=${instance}`,
     // Cap this container's own log growth, independent of the daemon-wide
     // default (which only applies to containers created after a daemon
     // restart). Sandboxes are --rm so logs die on exit, but a long agent
@@ -617,26 +622,66 @@ export function withGitSafeDirectory(env) {
  * boot; unlabeled pre-upgrade containers are skipped (they drain via their own
  * TTL/exit).
  */
-export async function reapOrphanContainers({ dockerRunner = dockerCmd } = {}) {
+/**
+ * The label that says which deployment a sandbox belongs to, and its value for
+ * this process.
+ *
+ * The reaper used to remove EVERY `unieai.sandbox=1` container on the daemon.
+ * On a host that runs more than one deployment against one dockerd — this one
+ * runs copilot-v2's production sandbox-runtime, which labels its sandboxes the
+ * same way, next to every CAC bundle — starting or stopping any of them killed
+ * the others' live sandboxes. Found when the bundle smoke left a sandbox behind
+ * and the next boot would have swept it, along with anybody else's. Each
+ * deployment now names itself (the compose bundle uses its project name) and
+ * removes only what carries its name.
+ */
+export const SANDBOX_INSTANCE_LABEL = "unieai.instance";
+const INSTANCE_OK = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/;
+
+export function resolveSandboxInstance(env = process.env) {
+  const raw = String(env?.SANDBOX_INSTANCE ?? "").trim() || "cac";
+  if (!INSTANCE_OK.test(raw)) {
+    throw new SandboxError(
+      "config_error",
+      `SANDBOX_INSTANCE=${JSON.stringify(raw)} must be 1-63 characters of letters, digits, '.', '_' or '-' (it is a docker label value)`,
+      500,
+    );
+  }
+  return raw;
+}
+
+/**
+ * Remove this deployment's sandbox containers. At boot they are orphans (the
+ * pool map died with the previous process); at shutdown they are about to be
+ * (and they hold this process's mounts open). Never anyone else's: the filter
+ * is this instance's label AND the sandbox label.
+ */
+export async function reapOrphanContainers({ dockerRunner = dockerCmd, instance = resolveSandboxInstance(), reason = "boot" } = {}) {
   let ids = [];
   try {
-    const out = await dockerRunner(["ps", "-q", "--filter", "label=unieai.sandbox=1"]);
+    const out = await dockerRunner([
+      "ps", "-q",
+      "--filter", "label=unieai.sandbox=1",
+      "--filter", `label=${SANDBOX_INSTANCE_LABEL}=${instance}`,
+    ]);
     ids = String(out || "").split("\n").map((x) => x.trim()).filter(Boolean);
   } catch (err) {
     log("warn", "docker.orphan_scan_failed", { error: err?.message });
     return { reaped: 0 };
   }
   if (ids.length === 0) return { reaped: 0 };
-  let reaped = 0;
-  for (const id of ids) {
+  // In parallel: at shutdown the whole stop has about 10 s.
+  const results = await Promise.all(ids.map(async (id) => {
     try {
       await dockerRunner(["rm", "-f", id], { timeoutMs: 20_000 });
-      reaped += 1;
+      return true;
     } catch (err) {
       log("warn", "docker.orphan_reap_failed", { containerId: id, error: err?.message });
+      return false;
     }
-  }
-  log("info", "docker.orphans_reaped", { found: ids.length, reaped });
+  }));
+  const reaped = results.filter(Boolean).length;
+  log("info", "docker.orphans_reaped", { found: ids.length, reaped, instance, reason });
   return { reaped };
 }
 

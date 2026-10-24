@@ -67,9 +67,19 @@ RUN arch="$(uname -m)" \
 
 WORKDIR /app/runtime
 COPY runtime/ ./
-# sandbox-runtime has no external deps; install only if a manifest with deps
-# exists (no-op otherwise). Kept tolerant so the image builds regardless.
-RUN if [ -f package.json ]; then npm install --omit=dev || true; fi
+# Exactly the lockfile, or no image. This used to be `npm install || true`: a
+# failed install still produced an image, which then died on its first S3 call
+# (@aws-sdk/client-s3 is the storage engine). node_modules never comes from the
+# host (.dockerignore).
+RUN npm ci --omit=dev --no-audit --no-fund \
+    && node -e "import('@aws-sdk/client-s3').then(() => console.log('deps ok'))"
+
+ARG CAC_VERSION=dev
+ARG CAC_REVISION=unknown
+LABEL org.opencontainers.image.title="UnieAI Cloud Agent Computer" \
+      org.opencontainers.image.source="https://github.com/UnieAI/UnieAI-Cloud-Agent-Computer" \
+      org.opencontainers.image.version="${CAC_VERSION}" \
+      org.opencontainers.image.revision="${CAC_REVISION}"
 
 EXPOSE 4020
 HEALTHCHECK --interval=10s --timeout=3s --retries=5 \
