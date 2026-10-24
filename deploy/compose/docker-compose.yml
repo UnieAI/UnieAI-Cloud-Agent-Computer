@@ -1,0 +1,115 @@
+# deploy/compose/docker-compose.yml — CAC on one host (P2).
+#
+#   cp .env.example .env    # fill in the object store and a caller key
+#   docker compose --profile bundled-s3 up -d     # with the bundled SeaweedFS
+#   docker compose up -d                          # with your own S3 (MinIO, AWS, R2…)
+#
+# The object store is ALWAYS S3. There is no local-directory mode: workspaces
+# must outlive this host and be reachable from every host. The storage doctor
+# runs before the server and refuses to start on a store CAC cannot use.
+#
+# Host requirements: Docker with compose v2, /dev/fuse (the S3 mount), and a
+# shared root mount (the systemd default) so mounts made in the cac container
+# reach the host's dockerd.
+name: ${CAC_PROJECT:-cac}
+
+services:
+  cac:
+    image: ${CAC_IMAGE:-cac/runtime:local}
+    build:
+      context: ../..
+      dockerfile: docker/sandbox-runtime/Dockerfile
+    restart: unless-stopped
+    env_file: [ .env ]
+    environment:
+      SANDBOX_PORT: "4020"
+      SANDBOX_MODE: docker
+      SANDBOX_ENFORCE_OWNERSHIP: "1"
+      AGENT_WORKSPACE_S3: "true"
+      # Each workspace is an rclone mount of <bucket>/<owner>/workspace, made by
+      # this container and bound into the sandbox; the sandbox holds no S3 key.
+      SANDBOX_WORKSPACE_MOUNT: host
+      SANDBOX_HOST_MOUNT_DRIVER: s3
+      SANDBOX_HOST_MOUNT_ROOT: ${CAC_MOUNT_ROOT:-/var/lib/cac/mnt}
+      SANDBOX_S3_CREDENTIALS: omit
+      SANDBOX_DOCKER_IMAGE: ${SANDBOX_DOCKER_IMAGE:-cac-sandbox:local}
+      SANDBOX_DOCKER_NETWORK: ${CAC_PROJECT:-cac}-sandbox
+      CAC_SANDBOX_SUBNET: ${CAC_SANDBOX_SUBNET:-10.89.1.0/24}
+    # The sandbox network is created here, not declared below: compose does not
+    # create a network no service joins (measured), and nothing may join this
+    # one — not the store (its filer answers anonymously), not this service.
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        docker network inspect "$$SANDBOX_DOCKER_NETWORK" >/dev/null 2>&1 \
+          || docker network create --driver bridge --subnet "$$CAC_SANDBOX_SUBNET" "$$SANDBOX_DOCKER_NETWORK" >/dev/null
+        node apps/sandbox-runtime/src/doctor/storage-doctor.mjs
+        exec node apps/sandbox-runtime/src/server.mjs
+    ports:
+      - "127.0.0.1:${CAC_PORT:-4020}:4020"
+    devices: [ /dev/fuse ]
+    cap_add: [ SYS_ADMIN ]
+    security_opt: [ "apparmor:unconfined" ]
+    volumes:
+      # security-scan: accepted — SANDBOX_MODE=docker starts one container per sandbox
+      - /var/run/docker.sock:/var/run/docker.sock
+      # The mounts, at the IDENTICAL path: this container hands these paths to the
+      # host's dockerd as -v sources. rshared so a mount made here appears there.
+      - type: bind
+        source: ${CAC_MOUNT_ROOT:-/var/lib/cac/mnt}
+        target: ${CAC_MOUNT_ROOT:-/var/lib/cac/mnt}
+        bind: { propagation: rshared, create_host_path: true }
+    networks: [ store ]
+    depends_on:
+      seaweedfs-init: { condition: service_completed_successfully, required: false }
+    mem_limit: 1g
+
+  # ── The bundled object store (profile bundled-s3). Skip it to use your own S3.
+  seaweedfs:
+    profiles: [ bundled-s3 ]
+    image: chrislusf/seaweedfs:4.41
+    restart: unless-stopped
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in .env}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
+    # Authentication ON: with no identities the gateway accepts anyone.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        printf '{"identities":[{"name":"cac","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}' "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" > /tmp/s3.json
+        exec weed server -dir=/data -s3 -s3.config=/tmp/s3.json
+    volumes: [ "seaweedfs:/data" ]
+    networks:
+      store: { aliases: [ seaweedfs ] }
+    healthcheck:
+      test: [ "CMD-SHELL", "nc -z 127.0.0.1 8333" ]
+      interval: 3s
+      retries: 40
+    mem_limit: 1g
+
+  # Creates the bucket in the bundled store, once. CAC itself never creates buckets.
+  seaweedfs-init:
+    profiles: [ bundled-s3 ]
+    image: ${CAC_IMAGE:-cac/runtime:local}
+    env_file: [ .env ]
+    entrypoint:
+      - sh
+      - -c
+      - |
+        RCLONE_CONFIG=/dev/null RCLONE_S3_PROVIDER=Other RCLONE_S3_ENDPOINT="$$S3_ENDPOINT" \
+        RCLONE_S3_ACCESS_KEY_ID="$$S3_ACCESS_KEY" RCLONE_S3_SECRET_ACCESS_KEY="$$S3_SECRET_KEY" \
+          rclone mkdir ":s3:$$S3_BUCKET"
+    networks: [ store ]
+    depends_on:
+      seaweedfs: { condition: service_healthy }
+    restart: "no"
+
+networks:
+  store:
+    ipam: { config: [ { subnet: "${CAC_STORE_SUBNET:-10.89.0.0/24}" } ] }
+
+volumes:
+  seaweedfs:

@@ -74,9 +74,12 @@
  */
 
 import { spawn as nodeSpawn, execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import http from "node:http";
 import { promises as fsp, constants as fsConstants } from "node:fs";
 import path from "node:path";
 
+import { s3ForcePathStyle } from "../../../../packages/storage-engine/src/index.mjs";
 import { SandboxError } from "../shared/error.mjs";
 import { log } from "../shared/log.mjs";
 import { isTenantBucketName } from "../workspace/tenant-store.mjs";
@@ -148,10 +151,88 @@ function intEnv(raw, fallback) {
   return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : fallback;
 }
 
+/**
+ * WHICH PROGRAM MOUNTS a workspace in `host` mode (CAC P2).
+ *
+ *   · `weed`  (default) — `weed mount` against a SeaweedFS filer. Everything in
+ *     the header above is about this one; production runs it.
+ *   · `s3`    — `rclone mount` against any S3 API: the operator's own MinIO,
+ *     AWS, R2, or the SeaweedFS S3 gateway. It is what lets a self-hosted
+ *     deployment bring its own object store: `weed mount` speaks only the
+ *     filer's gRPC, so with any other store the file panel (plain S3 through
+ *     storage-engine) worked while every sandbox saw an empty /workspace.
+ *
+ * Same keys, same layout on both: the mount names `<bucket>/<subpath>`, which
+ * is exactly the S3 key storage-engine writes, so the file panel and the
+ * sandbox look at the same objects.
+ *
+ * An unknown value is a config error, not a fallback to weed: a deployment that
+ * asked for its own S3 and silently got a weed mount would hand every sandbox an
+ * empty workspace (no filer answers) instead of an error.
+ */
+export const HOST_MOUNT_DRIVER_WEED = "weed";
+export const HOST_MOUNT_DRIVER_S3 = "s3";
+
+export function resolveHostMountDriver(env = process.env) {
+  const raw = String(env?.SANDBOX_HOST_MOUNT_DRIVER ?? "").trim().toLowerCase();
+  if (raw === "" || raw === HOST_MOUNT_DRIVER_WEED) return HOST_MOUNT_DRIVER_WEED;
+  if (raw === HOST_MOUNT_DRIVER_S3) return HOST_MOUNT_DRIVER_S3;
+  throw new SandboxError(
+    "config_error",
+    `SANDBOX_HOST_MOUNT_DRIVER="${raw}" is not a mount driver; use "${HOST_MOUNT_DRIVER_WEED}" (SeaweedFS filer) or "${HOST_MOUNT_DRIVER_S3}" (any S3 API, via rclone)`,
+    500,
+  );
+}
+
+/**
+ * Directory holding one control socket per rclone mount. A unix socket path is
+ * capped at 107 bytes by the kernel (sun_path) and rclone then dies with a bare
+ * "bind: invalid argument" — measured with a socket under the scratchpad — so a
+ * long directory is refused here, at config time, with the reason.
+ */
+const RC_SOCKET_NAME_LEN = 22; // "<16 hex>.sock" plus the separator, rounded up
+function resolveRcDir(env) {
+  const dir = String(env?.SANDBOX_HOST_MOUNT_RCLONE_RC_DIR ?? "").trim() || "/run/cac-rclone";
+  if (!path.isAbsolute(dir) || dir.length + RC_SOCKET_NAME_LEN > 107) {
+    throw new SandboxError(
+      "config_error",
+      `SANDBOX_HOST_MOUNT_RCLONE_RC_DIR must be an absolute path short enough for a unix socket (≤ ${107 - RC_SOCKET_NAME_LEN} bytes); got ${JSON.stringify(dir)}`,
+      500,
+    );
+  }
+  return dir;
+}
+
+/** The control socket of the rclone mount at `mountPath`. Derived, so a mount
+ *  adopted from a previous process (reconcile) is still reachable. */
+export function rcSocketFor(cfg, mountPath) {
+  const id = createHash("sha256").update(path.resolve(mountPath)).digest("hex").slice(0, 16);
+  return path.join(cfg.s3.rcDir, `${id}.sock`);
+}
+
 /** Env → host-mount config. Pure; every field is overridable for tests. */
 export function resolveHostMountConfig(env = process.env) {
   return {
     mode: resolveWorkspaceMountMode(env),
+    driver: resolveHostMountDriver(env),
+    rcloneBinary: String(env?.SANDBOX_HOST_MOUNT_RCLONE_BINARY ?? "rclone").trim() || "rclone",
+    /** Where the object store is. NO credentials here: inspect() returns this
+     *  object, and the keys reach rclone only through its environment. */
+    s3: {
+      endpoint: String(env?.S3_ENDPOINT ?? "").trim(),
+      region: String(env?.S3_REGION ?? "").trim(),
+      forcePathStyle: s3ForcePathStyle(env),
+      /** What a location with `bucket: null` means: storage-engine's default,
+       *  S3_BUCKET and nothing else. NOT `WEED_S3_BUCKET || S3_BUCKET` — that
+       *  exact fallback is how the sandbox and the file panel once used two
+       *  different buckets (resolveWorkspaceLocation in docker.mjs, 2026-09-07). */
+      defaultBucket: String(env?.S3_BUCKET ?? "").trim(),
+      /** Backstop only, for writes that do not pass through this process (another
+       *  host, the caller writing S3 directly). Writes that do are made visible
+       *  at once by invalidateObject. */
+      dirCacheSec: intEnv(env?.SANDBOX_HOST_MOUNT_S3_DIR_CACHE_SEC, 5),
+      rcDir: resolveRcDir(env),
+    },
     /** Host directory that holds every mount. Mirrors the /mnt/<bucket>/<path>
      *  convention the allocate API already speaks. */
     mountRoot: String(env?.SANDBOX_HOST_MOUNT_ROOT ?? "/mnt").trim() || "/mnt",
@@ -327,10 +408,88 @@ export function buildHostWeedMountArgs(cfg, { bucket, subpath, mountPath, readOn
   return argv;
 }
 
+/**
+ * `rclone mount` argv for one workspace (driver `s3`).
+ *
+ * Mirrors the weed argv decision for decision:
+ *   · `--allow-other`: dockerd (root) binds the mount; see the header.
+ *   · uid 0 + the workspace group, files 0660 / dirs 0770: the same "map the
+ *     group, never a uid" rule as buildHostWeedMountArgs. The container joins
+ *     the group with --group-add.
+ *   · `--vfs-cache-mode writes`: without it rclone refuses to open a file for
+ *     read+write or to seek while writing, which is what editors, `sed -i`,
+ *     git and sqlite do. A workspace that only takes sequential writes is not
+ *     a workspace.
+ *
+ * No endpoint and no key on the argv: argv is world-readable in /proc. They go
+ * in the child's environment (hostMountChildEnv), and the remote is the
+ * on-the-fly `:s3:` backend, so no rclone.conf exists anywhere.
+ */
+export function buildHostS3MountArgs(cfg, { bucket, subpath, mountPath, readOnly = false }) {
+  const gid = cfg.workspaceGid ?? 0;
+  const argv = [
+    "mount",
+    `:s3:${bucket}/${subpath}`,
+    mountPath,
+    "--allow-other",
+    "--uid", "0",
+    "--gid", String(gid),
+    "--dir-perms", "0770",
+    "--file-perms", "0660",
+    // Without it the process umask (022) is applied on top: files came out
+    // 0640 (measured), readable but not writable by the sandbox's group.
+    "--umask", "007",
+    "--vfs-cache-mode", "writes",
+    // allow_other with NO permission check lets every account on the host read
+    // every tenant's files: FUSE leaves access control to the server, and rclone
+    // does none. This makes the kernel enforce the 0660 / 0770 + group above.
+    "--default-permissions",
+    "--dir-cache-time", `${cfg.s3.dirCacheSec}s`,
+    // The control socket invalidateObject talks to. Unauthenticated, so it lives
+    // in a 0700 directory (spawnMount): the socket itself is created 0775.
+    "--rc", "--rc-no-auth", "--rc-addr", `unix://${rcSocketFor(cfg, mountPath)}`,
+  ];
+  if (readOnly) argv.push("--read-only");
+  argv.push(...cfg.extraArgs);
+  return argv;
+}
+
+/**
+ * The environment the mount process gets. For `s3` it carries the store and
+ * its keys, read from `env` at spawn time (never kept in cfg). Only what the
+ * mounter needs: not this process's whole environment, which holds every other
+ * secret the runtime was given.
+ */
+export function hostMountChildEnv(cfg, env = process.env) {
+  const base = { PATH: env.PATH ?? "/usr/local/bin:/usr/bin:/bin", HOME: env.HOME ?? "/root" };
+  if (cfg.driver !== HOST_MOUNT_DRIVER_S3) return base;
+  return {
+    ...base,
+    RCLONE_CONFIG: "/dev/null",
+    RCLONE_S3_PROVIDER: "Other",
+    RCLONE_S3_ENDPOINT: cfg.s3.endpoint,
+    ...(cfg.s3.region ? { RCLONE_S3_REGION: cfg.s3.region } : {}),
+    RCLONE_S3_ACCESS_KEY_ID: String(env.S3_ACCESS_KEY ?? ""),
+    RCLONE_S3_SECRET_ACCESS_KEY: String(env.S3_SECRET_KEY ?? ""),
+    RCLONE_S3_FORCE_PATH_STYLE: cfg.s3.forcePathStyle ? "true" : "false",
+    // A bucket is never created by a mount: a typo in S3_BUCKET must fail, not
+    // quietly make a second bucket nobody reads.
+    RCLONE_S3_NO_CHECK_BUCKET: "true",
+  };
+}
+
+/** The binary and argv that mount one workspace, for the configured driver. */
+export function hostMountCommand(cfg, target) {
+  if (cfg.driver === HOST_MOUNT_DRIVER_S3) {
+    return { binary: cfg.rcloneBinary, argv: buildHostS3MountArgs(cfg, target) };
+  }
+  return { binary: cfg.weedBinary, argv: buildHostWeedMountArgs(cfg, target) };
+}
+
 // ---- default (real) seams ------------------------------------------------
 
-const defaultSpawn = ({ binary, argv, mountPath }) => {
-  const child = nodeSpawn(binary, argv, { stdio: ["ignore", "pipe", "pipe"], detached: false });
+const defaultSpawn = ({ binary, argv, mountPath, env }) => {
+  const child = nodeSpawn(binary, argv, { stdio: ["ignore", "pipe", "pipe"], detached: false, ...(env ? { env } : {}) });
   const tag = `pid=${child.pid ?? "?"} dir=${mountPath}`;
   child.stderr?.on("data", (chunk) => {
     const line = String(chunk).split("\n")[0]?.slice(0, 240);
@@ -339,6 +498,23 @@ const defaultSpawn = ({ binary, argv, mountPath }) => {
   child.on("error", (err) => log("error", "host_mount.weed_spawn_error", { tag, error: err?.message }));
   return child;
 };
+
+/** POST one rclone remote-control command over the mount's unix socket. */
+const defaultRcCall = (socketPath, command, params, timeoutMs = 1000) =>
+  new Promise((resolve, reject) => {
+    const body = JSON.stringify(params ?? {});
+    const req = http.request(
+      { socketPath, method: "POST", path: `/${command}`, headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body) }, timeout: timeoutMs },
+      (res) => {
+        let text = "";
+        res.on("data", (c) => { text += c; });
+        res.on("end", () => (res.statusCode === 200 ? resolve(text) : reject(new Error(`rc ${command}: HTTP ${res.statusCode} ${text.slice(0, 200)}`))));
+      },
+    );
+    req.on("timeout", () => req.destroy(new Error(`rc ${command}: no answer in ${timeoutMs}ms`)));
+    req.on("error", reject);
+    req.end(body);
+  });
 
 /** Absolute mount points under `root` that the kernel currently reports. */
 /**
@@ -506,6 +682,9 @@ export function createHostMountManager({
   readLeafDirs = defaultReadLeafDirs,
   readyIntervalMs = 100,
   now = () => Date.now(),
+  rcCall = defaultRcCall,
+  prepareRcDir = (dir) => fsp.mkdir(dir, { recursive: true, mode: 0o700 }).then(() => fsp.chmod(dir, 0o700)),
+  removeFile = (p) => fsp.rm(p, { force: true }),
 } = {}) {
   /** mountPath -> entry */
   const entries = new Map();
@@ -537,12 +716,18 @@ export function createHostMountManager({
     // the kernel mount, and an adopted mount has no child to signal at all.
     await externalUnmount(entry.mountPath).catch(() => false);
     try { await rmdir(entry.mountPath); } catch { /* non-empty or gone: fine */ }
+    if (config.driver === HOST_MOUNT_DRIVER_S3) await removeFile(rcSocketFor(config, entry.mountPath)).catch(() => {});
   }
 
   async function spawnMount({ bucket, subpath, mountPath, readOnly }) {
     await mkdirp(mountPath);
-    const argv = buildHostWeedMountArgs(config, { bucket, subpath, mountPath, readOnly });
-    const child = spawn({ binary: config.weedBinary, argv, mountPath, bucket, subpath });
+    if (config.driver === HOST_MOUNT_DRIVER_S3) {
+      await prepareRcDir(config.s3.rcDir);
+      // A socket left by a killed rclone makes the new one fail to bind.
+      await removeFile(rcSocketFor(config, mountPath)).catch(() => {});
+    }
+    const { binary, argv } = hostMountCommand(config, { bucket, subpath, mountPath, readOnly });
+    const child = spawn({ binary, argv, mountPath, bucket, subpath, env: hostMountChildEnv(config) });
     const entry = entries.get(mountPath);
     if (entry) entry.child = child;
     const ok = await waitReady(mountPath, now() + config.readyTimeoutMs);
@@ -551,8 +736,12 @@ export function createHostMountManager({
       await externalUnmount(mountPath).catch(() => false);
       throw new SandboxError(
         "host_mount_failed",
-        `host weed mount did not become usable within ${config.readyTimeoutMs}ms ` +
-          `at ${mountPath} (filer=${config.filer}, volumeServerAccess=${config.volumeServerAccess})`,
+        config.driver === HOST_MOUNT_DRIVER_S3
+          ? `host rclone mount did not become usable within ${config.readyTimeoutMs}ms ` +
+            `at ${mountPath} (s3 endpoint=${config.s3.endpoint || "(unset)"}, bucket=${bucket}). ` +
+            `Run the storage doctor (node apps/sandbox-runtime/src/doctor/storage-doctor.mjs) for the reason.`
+          : `host weed mount did not become usable within ${config.readyTimeoutMs}ms ` +
+            `at ${mountPath} (filer=${config.filer}, volumeServerAccess=${config.volumeServerAccess})`,
         503,
       );
     }
@@ -590,6 +779,9 @@ export function createHostMountManager({
   }
 
   return {
+    /** Which program mounts (weed | s3). docker.mjs reads it for the guest env. */
+    driver: config.driver,
+
     /**
      * Take a hold on the host mount for one workspace, mounting it if needed.
      * Concurrent callers for the same workspace coalesce on one weed process.
@@ -631,6 +823,38 @@ export function createHostMountManager({
       }
       log("info", "host_mount.mounted", { mountPath, bucket, subpath, readOnly });
       return makeHandle(entry);
+    },
+
+    /**
+     * Make an object this process just wrote or deleted through S3 visible to
+     * the mounts that cover it (driver `s3` only; weed follows the filer's own
+     * metadata stream). Awaited by the write path — see userStore's
+     * onWorkspaceObjectChange. Never throws: the object is already stored.
+     *
+     * Entries are matched by mountPath, not by their recorded bucket/subpath,
+     * because a mount adopted at reconcile has neither.
+     */
+    async invalidateObject({ bucket, key } = {}) {
+      if (config.driver !== HOST_MOUNT_DRIVER_S3) return [];
+      const b = bucket || config.s3.defaultBucket;
+      if (!b || !key) return [];
+      const objectPath = path.resolve(config.mountRoot, b, String(key));
+      const done = [];
+      await Promise.all(Array.from(entries.values(), async (entry) => {
+        const prefix = entry.mountPath + path.sep;
+        if (!objectPath.startsWith(prefix)) return;
+        const parent = path.posix.dirname(objectPath.slice(prefix.length).split(path.sep).join("/"));
+        try {
+          await rcCall(rcSocketFor(config, entry.mountPath), "vfs/forget", parent === "." ? {} : { dir: parent });
+          done.push(entry.mountPath);
+        } catch (err) {
+          log("warn", "host_mount.invalidate_failed", {
+            mountPath: entry.mountPath, error: err?.message,
+            note: `the sandbox sees this change within ${config.s3.dirCacheSec}s (the mount's own cache expiry)`,
+          });
+        }
+      }));
+      return done;
     },
 
     /**

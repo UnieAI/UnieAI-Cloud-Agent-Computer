@@ -22,12 +22,14 @@ import {
   resolveWorkspaceMountMode,
 } from "./host-mount.mjs";
 import { createSshClient } from "./ssh.mjs";
+import { onWorkspaceObjectChange } from "../workspace/userStore.mjs";
 import { createRelayClient } from "./relay.mjs";
 
 let _backend = null;
 let _sshBackend = null;
 let _relayBackend = null;
 let _hostMount = null;
+let _unsubscribeObjectChanges = null;
 
 /**
  * The host-side workspace mount manager, or null when this deployment leaves
@@ -45,7 +47,15 @@ export function getHostMountManager() {
     return _hostMount;
   }
   if (mode !== WORKSPACE_MOUNT_HOST) return null;
-  if (!_hostMount) _hostMount = createHostMountManager();
+  if (!_hostMount) {
+    _hostMount = createHostMountManager();
+    // An S3-driver mount caches listings; every write and delete this process
+    // makes through S3 drops the cached directory before its reply goes out.
+    // Unsubscribed on reset so a re-created manager is the only one told.
+    const manager = _hostMount;
+    _unsubscribeObjectChanges?.();
+    _unsubscribeObjectChanges = onWorkspaceObjectChange((change) => manager.invalidateObject(change));
+  }
   return _hostMount;
 }
 
@@ -150,6 +160,8 @@ export function getBackend(sandboxId) {
 export function resetBackend() {
   _backend = null;
   _hostMount = null;
+  _unsubscribeObjectChanges?.();
+  _unsubscribeObjectChanges = null;
   _sshBackend = null;
   _relayBackend = null;
   _bySandbox.clear();

@@ -45,13 +45,32 @@ for it, and operator routes (pool policy, quota limits, the all-tenant event
 stream, SSH checks, the Rabi Local relay) stay with the shared token.
 See `runtime/apps/sandbox-runtime/src/shared/callers.mjs`.
 
-## Run
+## Run (single host, P2)
+
+The object store is always S3, and you choose which: the bundled SeaweedFS, or
+your own MinIO / AWS S3 / any S3 API. There is no local-directory mode.
 
 ```bash
-docker build -f docker/sandbox-runtime/Dockerfile -t cac/sandbox-runtime .
-# offline / single node: local disk instead of S3
-STORAGE_LOCAL_FS=1 STORAGE_LOCAL_FS_ROOT=/var/lib/cac SANDBOX_INTERNAL_TOKEN=… node runtime/apps/sandbox-runtime/src/server.mjs
+docker build -f docker/sandbox-runtime/Dockerfile -t cac/runtime:local .
+docker build -f docker/sandbox-template/Dockerfile -t cac-sandbox:local .   # or your own template
+cd deploy/compose && cp .env.example .env    # the store, its keys, a caller key
+docker compose --profile bundled-s3 up -d    # bundled SeaweedFS
+docker compose up -d                         # your own S3 (set S3_ENDPOINT)
 ```
+
+Before the server starts, the storage doctor checks the store: it is S3, the
+bucket exists, the keys can write, read and delete, conditional writes are
+honoured, and the S3 mount can run. It names the setting to fix and never
+prints a key. To run it by hand:
+
+```bash
+docker compose run --rm cac node apps/sandbox-runtime/src/doctor/storage-doctor.mjs
+```
+
+Each sandbox's `/workspace` is an rclone mount of `<bucket>/<owner>/workspace`.
+The cac container makes the mount and binds it in, so the sandbox holds no S3
+key and has no route to the store. Host requirements: Docker with compose v2,
+`/dev/fuse`, and a shared root mount (the systemd default).
 
 ## Test
 
@@ -66,7 +85,15 @@ Standalone they **skip with a reason**. Point `COPILOT_V2_ROOT` at a copilot-v2
 checkout to run them:
 
 ```bash
-COPILOT_V2_ROOT=~/worktrees/copilot-v2 npm test
+COPILOT_V2_ROOT=<checkout of what production runs> npm test
 ```
 
-The Docker round-trip test runs only with `DOCKER_INTEGRATION=1`.
+The Docker round-trip test runs only with `DOCKER_INTEGRATION=1`. The real S3
+mount (rclone against MinIO and SeaweedFS, in throwaway containers, building
+nothing) and the whole bundle have their own scripts:
+
+```bash
+STORE=minio     scripts/s3-mount-it.sh <image with node 22 + apt> <rclone binary>
+STORE=seaweedfs scripts/s3-mount-it.sh <image with node 22 + apt> <rclone binary>
+scripts/bundle-smoke.sh      # needs cac/runtime:local and cac-sandbox:local
+```

@@ -1703,7 +1703,17 @@ function shutdown(signal) {
   log("info", "sandbox.shutdown", { signal });
   stopReaper();
   clearInterval(execGcTimer);
-  server.close(() => process.exit(0));
+  // Take the host mounts down with the process. Left mounted, a mount whose
+  // server just died stays in the mount table returning ENOTCONN — and in the
+  // compose bundle the mounts propagate to the HOST (rshared), so every
+  // `docker compose down` left dead FUSE mounts there until the next boot's
+  // reconcile. Capped so a hung unmount cannot hold the stop past docker's
+  // 10 s; the reconcile at boot still clears whatever this misses.
+  const unmount = import("./cube/index.mjs")
+    .then(({ getHostMountManager }) => getHostMountManager()?.shutdown?.())
+    .catch((err) => log("warn", "sandbox.host_mount_shutdown_failed", { error: err?.message || String(err) }));
+  Promise.race([unmount, new Promise((r) => setTimeout(r, 5000).unref())])
+    .finally(() => server.close(() => process.exit(0)));
   setTimeout(() => process.exit(1), 8000).unref();
 }
 

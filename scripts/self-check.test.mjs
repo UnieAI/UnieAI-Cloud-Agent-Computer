@@ -33,6 +33,11 @@ function run(tree) {
 
 const SERVER = "runtime/apps/sandbox-runtime/src/server.mjs";
 
+test("skip-null accepts an explicit false and a boolean expression", () => {
+  const ok = 'const a = why() ?? false;\nconst b = !HAVE;\nconst c = x === 1;\ntest("t", { skip: a }, () => {});\ntest("u", { skip: b }, () => {});\ntest("v", { skip: c }, () => {});\n';
+  assert.equal(run({ "t/x.test.mjs": ok }).code, 0);
+});
+
 test("a clean tree passes", () => {
   assert.equal(run({ "a.mjs": 'import "./b.mjs";\n', "b.mjs": "", [SERVER]: "  {\n    pattern: /^\\/healthz\\/?$/,\n    requiresAuth: false,\n  }\n" }).code, 0);
 });
@@ -45,6 +50,9 @@ const cases = {
   "base64-tamper": { "t/x.test.mjs": 'p = `${p.slice(0, -1)}${p.endsWith("A") ? "B" : "A"}`;\n' },
   "public-routes": { [SERVER]: "  {\n    pattern: /^\\/v1\\/debug\\/?$/,\n    requiresAuth: false,\n  }\n" },
   "caller-key-hash": { "callers.json": '[{"id":"s","namespace":"s","key":"plaintext"}]\n' },
+  // Shorthand only: the first version of the rule matched `skip: name` and missed `{ skip }`.
+  "single-bucket": { "a.mjs": "// the comment may say WEED_S3_BUCKET\nconst b = process.env?.WEED_S3_BUCKET || process.env.S3_BUCKET;\n" },
+  "skip-null": { "t/x.test.mjs": 'const skip = why();\ntest("t", { skip }, () => {});\n' },
 };
 
 for (const [rule, tree] of Object.entries(cases)) {

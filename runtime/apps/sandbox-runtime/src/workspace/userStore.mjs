@@ -363,6 +363,30 @@ export class ProtectedPathError extends Error {
 }
 
 /**
+ * Listeners told about every workspace object this process writes or deletes,
+ * AFTER the store accepted it and BEFORE the call returns.
+ *
+ * Why it is awaited (CAC P2): an S3-driver host mount (rclone) caches directory
+ * listings, so a file the agent writes with its write tool — which lands here,
+ * through S3 — is invisible to the `cat` it runs next until the cache expires.
+ * Measured: still missing after 30 s with rclone's defaults. The listener drops
+ * the cached directory, and the HTTP reply waits for that, so "write, then run"
+ * sees the file. A listener failure never fails the write: the object is
+ * stored; the worst case is the cache's own expiry.
+ */
+const objectChangeListeners = new Set();
+
+export function onWorkspaceObjectChange(listener) {
+  objectChangeListeners.add(listener);
+  return () => objectChangeListeners.delete(listener);
+}
+
+async function announceObjectChange(at, op) {
+  if (objectChangeListeners.size === 0) return;
+  await Promise.allSettled(Array.from(objectChangeListeners, (fn) => fn({ bucket: at.bucket, key: at.key, op })));
+}
+
+/**
  * `body` may be a Buffer/string or, for a large upload, a stream — then
  * `contentLength` is required (S3 cannot sign a PutObject of unknown length)
  * and a conditional write is refused (it compares bytes it would have to buffer).
@@ -395,6 +419,7 @@ export async function writeFile(owner, relPath, body, contentType, { expectedSha
     ...(contentLength !== undefined ? { contentLength } : {}),
     contentType: contentType || "application/octet-stream",
   });
+  await announceObjectChange(fileLocation(owner, relPath), "write");
 }
 
 export async function readFile(owner, relPath) {
@@ -421,6 +446,7 @@ export async function deleteFile(owner, relPath) {
   // resurrect the file the user just removed.
   const legacy = legacyFileLocation(owner, relPath);
   if (legacy.key !== at.key) await deleteObject({ at: legacy }).catch(() => {});
+  await announceObjectChange(at, "delete");
 }
 
 async function streamToBuffer(stream) {

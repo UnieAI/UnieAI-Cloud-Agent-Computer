@@ -110,9 +110,41 @@ for (const f of [path.join(ROOT, ".env"), ...walk(ROOT).filter((p) => /callers.*
   if (/"key"\s*:/.test(src)) fail("caller-key-hash", rel(f), 'a caller entry carries "key"; configure "key_sha256" only.');
 }
 
+// 8. `{ skip: X }` where X can be null. node reports `skip: null` as SKIPPED and
+//    runs the test anyway, so a failing test reads as a skip and the run is green.
+//    (P2: a `why()` that returned null for "run it" marked six real tests SKIP.)
+//    A bare name passed to skip must be declared with an explicit `false` for
+//    "run", or as a boolean expression.
+for (const f of tests) {
+  const src = read(f);
+  // `{ skip: name }` and the shorthand `{ skip }` (which is how this mistake was written).
+  for (const m of src.matchAll(/\{\s*skip(?::\s*([A-Za-z_$][\w$]*))?\s*[,}]/g)) {
+    const name = m[1] || "skip";
+    const decl = src.match(new RegExp(`(?:const|let|var)\\s+${name}\\s*=([^;]*);`));
+    if (!decl) continue; // a parameter or an import: not this file's to judge
+    if (!/\bfalse\b|!|===|!==|[<>]/.test(decl[1])) {
+      fail("skip-null", rel(f), `\`skip: ${name}\` can be null (declared \`${decl[0].trim().slice(0, 60)}\`); node SKIPS on null and still runs the test. Use \`?? false\`.`);
+    }
+  }
+}
+
+// 9. One bucket, named once: S3_BUCKET. Reading WEED_S3_BUCKET (usually as
+//    `WEED_S3_BUCKET || S3_BUCKET`) is how the sandbox mount and the file panel
+//    once used two buckets and hid a tenant's 692 objects (2026-09-07; it came
+//    back in P2's first draft of the S3 mount driver). Only reads count, not
+//    comments that tell the story.
+for (const f of files.filter((x) => !/\.test\.mjs$/.test(x))) {
+  read(f).split("\n").forEach((line, i) => {
+    if (/^\s*(?:\/\/|\*)/.test(line)) return;
+    if (/env\??\.WEED_S3_BUCKET\b|\[\s*["']WEED_S3_BUCKET["']\s*\]/.test(line)) {
+      fail("single-bucket", rel(f), `line ${i + 1} reads WEED_S3_BUCKET. The bucket is S3_BUCKET only, for the store and the mount alike.`);
+    }
+  });
+}
+
 if (findings.length) {
   console.error(`self-check: ${findings.length} finding(s)\n`);
   for (const x of findings) console.error(`  ${x}`);
   process.exit(1);
 }
-console.log(`self-check: ok (${files.length} files, ${tests.length} tests, 7 checks)`);
+console.log(`self-check: ok (${files.length} files, ${tests.length} tests, 9 checks)`);

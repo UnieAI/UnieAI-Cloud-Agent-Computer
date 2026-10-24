@@ -315,6 +315,16 @@ async function getStorageConfig() {
   );
 }
 
+/**
+ * S3_FORCE_PATH_STYLE → boolean. Path-style unless explicitly turned off
+ * (0/false/no/off): SeaweedFS and MinIO need it, AWS accepts it. The ONE parser
+ * of this variable — the sandbox mount (cube/host-mount.mjs) calls it too, so
+ * the file panel and /workspace can never address the store two ways.
+ */
+export function s3ForcePathStyle(env = process.env) {
+  return !/^(0|false|no|off)$/i.test(String(env?.S3_FORCE_PATH_STYLE ?? "").trim());
+}
+
 let _s3Client = null;
 let _s3ClientConfigKey = "";
 let _s3ClientOverride = null;
@@ -331,7 +341,10 @@ async function getS3Client() {
       accessKeyId: config.accessKeyId,
       secretAccessKey: config.secretAccessKey
     },
-    forcePathStyle: true,
+    // Path-style by default (SeaweedFS and MinIO need it). S3_FORCE_PATH_STYLE=0
+    // for a store that only takes virtual-hosted addressing. The sandbox mount
+    // reads the same variable (cube/host-mount.mjs), so both sides agree.
+    forcePathStyle: s3ForcePathStyle(),
     // SeaweedFS may advertise optional CRC32 response checksums with an
     // incorrect zero value. Keep required S3 checksum validation while
     // ignoring unsupported optional checksum headers.

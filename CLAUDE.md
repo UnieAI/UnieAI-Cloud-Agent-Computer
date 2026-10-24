@@ -9,13 +9,23 @@ Plan, contracts and phases: https://claude.ai/artifact/KMM8Kwt88bC7x2hukQ4RY7
 
 ```bash
 npm run check        # self-check (scripts/self-check.mjs) + the whole suite
-COPILOT_V2_ROOT=<copilot-v2 checkout> npm test   # also runs the cross-repo contracts
+COPILOT_V2_ROOT=<copilot-v2 checkout matching production> npm test   # also runs the cross-repo contracts
+scripts/s3-mount-it.sh <runner image> <rclone binary>   # STORE=minio|seaweedfs; the real S3 mount
+scripts/bundle-smoke.sh   # the bundle end to end (needs the two images built — ask first)
 ```
 
-Both must be green. "Green" means 0 fail. Read the skip count too: standalone
-skips 4 (3 cross-repo contracts + the Docker round trip), with
-`COPILOT_V2_ROOT` it skips 1. A different number means a test started skipping
-silently.
+The first two must be green. "Green" means 0 fail. Read the skip count too:
+standalone skips 10 (3 cross-repo contracts, the Docker round trip, the 6 real
+S3-mount tests), with `COPILOT_V2_ROOT` it skips 7. A different number means a
+test started skipping silently.
+
+`COPILOT_V2_ROOT` must be a checkout of what production runs (origin/ava, e.g.
+`~/worktrees/composer-desktop`), not the shared `~/service/copilot-v2`, which
+can be on any branch: pointed there, the entrypoint contract failed against a
+months-old `entrypoint.sh`.
+
+When you change anything under `cube/host-mount*.mjs`, `workspace/userStore.mjs`
+or the storage doctor, run `scripts/s3-mount-it.sh` against both stores.
 
 When a test fails and the cause is a mistake that could happen again, do two
 things. Fix it, then make it impossible to repeat: add a rule to
@@ -36,6 +46,26 @@ a separate change, not something to do on the side.
   touching identity.
 - `pool/manager.mjs`: sandboxes, keyed by user, session and owner slot.
 - `workspace/tenant-store.mjs` + `packages/storage-engine`: owner → S3 prefix or bucket.
+- `cube/host-mount.mjs`: the sandbox's /workspace. Driver `weed` (production,
+  SeaweedFS filer only) or `s3` (rclone, any S3 API; P2).
+- `doctor/storage-doctor.mjs`: is the configured store usable. The bundle runs
+  it before the server.
+- `deploy/compose/`: the single-host bundle. `docker/sandbox-template/`: a
+  generic sandbox image for it.
+
+## Storage (P2)
+
+- The object store is always S3, configured by the operator (`S3_ENDPOINT`,
+  `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`,
+  `S3_FORCE_PATH_STYLE`). There is no local-directory mode: workspaces must
+  outlive the host and be reachable from every host. storage-engine still has a
+  local-fs fallback for tests; the doctor refuses it.
+- The bucket is `S3_BUCKET`, for the store and the mount alike. Never read
+  `WEED_S3_BUCKET` (self-check `single-bucket`).
+- With the `s3` driver, every write or delete that goes through `userStore`
+  drops the mount's cached directory before the reply (`onWorkspaceObjectChange`
+  → `invalidateObject`). A new path that writes workspace objects without going
+  through `userStore` breaks "write, then run": route it through `userStore`.
 
 ## Callers and namespaces (P1)
 
@@ -71,6 +101,20 @@ a separate change, not something to do on the side.
 | A rewrite removed `repoRoot`, which the rest of the test still used, and the cross-repo run failed with `ReferenceError` | After narrowing a test, run it in BOTH modes (standalone and `COPILOT_V2_ROOT`) | this file |
 | The self-check's first run flagged a template-string import, a comment and an image name as violations | A rule matches what the code DOES (opens a file, declares a route), not words that appear in it; every rule has a fixture proving it fires | `scripts/self-check.test.mjs` |
 | The self-check then flagged its own fixtures | The fixture file is the one exclusion, by exact path | `scripts/self-check.mjs` |
+| A file written through the API was still invisible in the rclone mount after 30 s (it caches listings for 5 min) | Every `userStore` write/delete invalidates the covering mount, awaited; proven by turning it off and watching two tests fail | `host-mount-s3.integration.test.mjs` |
+| rclone applied the process umask over `--file-perms 0660`: files came out 0640, not writable by the sandbox's group | `--umask 007` | `host-mount-s3.test.mjs` + the integration test |
+| On the rclone mount every file is uid 0, so git refused every repository ("dubious ownership") | `safe.directory=*` through `GIT_CONFIG_COUNT` for s3-driver sandboxes; never map the uid to a host account | `host-mount-s3.test.mjs` |
+| `{ skip: null }` — a `why()` returning null for "run" — made node report six real, failing tests as SKIPPED | A skip value is `false` or a reason, never null | self-check `skip-null` |
+| The first `skip-null` rule matched `skip: name` but not the shorthand `{ skip }`, which is how the mistake was written; its fixture passed only because it had both | A fixture is written the way the mistake was | `scripts/self-check.test.mjs` |
+| The delete test passed with invalidation off: the file it deleted had never been visible, so "gone" was true from the start | An assertion of absence needs a precondition proving presence (same as `route-exists`) | this file |
+| The S3 driver's default bucket was written `WEED_S3_BUCKET \|\| S3_BUCKET` — the fallback behind the 2026-09-07 two-bucket incident | One bucket variable | self-check `single-bucket` |
+| `pkill -f "rclone … mount"` matched and killed the shell running it (exit 144) | Match processes by name (`pgrep -x rclone`), never by a command-line pattern your own shell contains | this file |
+| rclone died with "bind: invalid argument" on a socket under the scratchpad: a unix socket path is ≤ 107 bytes | Sockets are named by hash under a short directory; a long one is refused at config time | `host-mount-s3.test.mjs` |
+| The sandbox-runtime image had no `fusermount3`, and the host's cannot be borrowed (glibc mismatch) | `fuse3` in the Dockerfile; the doctor names what is missing | `storage-doctor.test.mjs` |
+| `docker network create` failed: "all predefined address pools have been fully subnetted" | The bundle declares its subnets; test scripts join an existing container's network namespace instead of creating networks | `deploy/compose/`, `scripts/s3-mount-it.sh` |
+| Compose did not create the sandbox network because no service joins it (and none may) | The cac container creates it at start | `deploy/compose/docker-compose.yml` |
+| Shutdown never unmounted, so with mounts propagated to the host every `compose down` left dead FUSE mounts there | `shutdown()` unmounts first (capped at 5 s); the smoke fails on any mount left | `scripts/bundle-smoke.sh` |
+| A doctor message claimed "SeaweedFS ≥ 3.80" supports conditional writes — never measured | User-facing claims name only what was measured (MinIO, SeaweedFS 4.41) | this file |
 | `harness-server.cjs` looked like part of the sandbox image, but it is copilot-v2's agent harness, built from its `runtime/apps/ava-local` | The sandbox template image belongs to the caller. CAC runs whatever `SANDBOX_DOCKER_IMAGE` says | this file |
 
 ## Working on the shared machine

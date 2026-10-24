@@ -38,6 +38,7 @@ import { legacyPrefix, resolveTenantStore } from "../workspace/tenant-store.mjs"
 import {
   WORKSPACE_MOUNT_HOST,
   WORKSPACE_MOUNT_HOST_PREMOUNTED,
+  HOST_MOUNT_DRIVER_S3,
   resolveWorkspaceMountMode,
 } from "./host-mount.mjs";
 import { resolveWorkspaceGid } from "./workspace-group.mjs";
@@ -583,6 +584,26 @@ export function buildContainerEnv({
 }
 
 /**
+ * Add `safe.directory=*` to a container env through git's environment config
+ * (GIT_CONFIG_COUNT/KEY_n/VALUE_n), after whatever entries the caller set.
+ *
+ * Needed for an S3-driver mount (rclone): every file shows as uid 0 there, the
+ * agent runs as uid 1000, and git refuses every repository with "detected
+ * dubious ownership" — measured, `git commit` exits 128. Mapping the uid
+ * instead would make a host account the owner of tenant files (see
+ * buildHostWeedMountArgs). Environment config counts as command-line scope,
+ * which git honours for safe.directory; measured on the sandbox image's git
+ * 2.39.5 with `*` (the `/path/*` form needs a newer git, so it is not used).
+ * `*` gives nothing away inside a sandbox: every repository in it is the
+ * tenant's own, which is the only thing safe.directory protects against.
+ */
+export function withGitSafeDirectory(env) {
+  const raw = env?.GIT_CONFIG_COUNT;
+  const n = /^[0-9]+$/.test(String(raw ?? "")) ? Number(raw) : 0;
+  return { ...env, GIT_CONFIG_COUNT: String(n + 1), [`GIT_CONFIG_KEY_${n}`]: "safe.directory", [`GIT_CONFIG_VALUE_${n}`]: "*" };
+}
+
+/**
  * Boot-time orphan reap: kill any sandbox container left over from a previous
  * sandbox-runtime process. The pool's session→sandbox map is in-process only,
  * so containers surviving a runtime restart are unreachable (no route can ever
@@ -802,12 +823,13 @@ export function createDockerClient({
       // In host-mount mode the object-store credential is pointless in the
       // guest (it has nothing to talk to) — never ship a credential a process
       // has no use for.
-      const containerEnv = buildContainerEnv({
+      const baseEnv = buildContainerEnv({
         callerEnv,
         bucket,
         subpath,
         ...(hostMountMode ? { s3CredentialMode: "omit" } : {}),
       });
+      const containerEnv = hostMount?.driver === HOST_MOUNT_DRIVER_S3 ? withGitSafeDirectory(baseEnv) : baseEnv;
       const sandboxId = `docker-${randomUUID().slice(0, 8)}`;
 
       // Take the host-side mount BEFORE starting the container: a container
