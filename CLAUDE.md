@@ -15,8 +15,8 @@ scripts/bundle-smoke.sh   # the bundle end to end (needs the two images built �
 ```
 
 The first two must be green. "Green" means 0 fail. Read the skip count too:
-standalone skips 10 (3 cross-repo contracts, the Docker round trip, the 6 real
-S3-mount tests), with `COPILOT_V2_ROOT` it skips 7. A different number means a
+standalone skips 11 (3 cross-repo contracts, the Docker round trip, the 7 real
+S3-mount tests), with `COPILOT_V2_ROOT` it skips 8. A different number means a
 test started skipping silently.
 
 `COPILOT_V2_ROOT` must be a checkout of what production runs (origin/ava, e.g.
@@ -115,6 +115,10 @@ a separate change, not something to do on the side.
 | Compose did not create the sandbox network because no service joins it (and none may) | The cac container creates it at start | `deploy/compose/docker-compose.yml` |
 | Shutdown never unmounted, so with mounts propagated to the host every `compose down` left dead FUSE mounts there | `shutdown()` unmounts first (capped at 5 s); the smoke fails on any mount left | `scripts/bundle-smoke.sh` |
 | A doctor message claimed "SeaweedFS ≥ 3.80" supports conditional writes — never measured | User-facing claims name only what was measured (MinIO, SeaweedFS 4.41) | this file |
+| "git works on the s3 mount" was reported after fixing only "dubious ownership"; `git init` had never run. The mount showed every file as uid 0, and with `--default-permissions` only the owner may chmod — git chmods `config.lock` on every config write. Found by the bundle smoke | The mount's `--uid` is the sandbox's uid (`SANDBOX_HOST_MOUNT_S3_UID`, 2468, never 1000 or 0) and the sandbox runs `--user 2468:<gid>`. A tool "works" only after it ran as the sandbox's uid: root may chmod anything | integration test "git … as the sandbox's uid" (red with `--uid 0`) |
+| The per-workspace manager adopted the mount ROOT at reconcile: in the bundle the root is itself a bind mount, so it is in /proc/mounts. It got an idle timer (it would have unmounted every workspace) and matched every invalidation | Reconcile skips the root; only `<root>/<bucket>/<subpath>` is ever a workspace | unit test "reconcile never adopts the mount root" |
+| `s3-mount-it.sh` exited 0 when the integration tests were skipped or failed: `node --test | tee` under `sh` (no pipefail) returns tee's status | The script greps `# fail 0` and `# skipped 0`; a skip there is a failure | `scripts/s3-mount-it.sh` |
+| The git test first ran under the IT's 0700 temp root; git stats every parent, so it failed for a reason no sandbox has | Test from where the sandbox stands: bind the mount at an open path, as docker binds /workspace | integration test |
 | `harness-server.cjs` looked like part of the sandbox image, but it is copilot-v2's agent harness, built from its `runtime/apps/ava-local` | The sandbox template image belongs to the caller. CAC runs whatever `SANDBOX_DOCKER_IMAGE` says | this file |
 
 ## Working on the shared machine

@@ -60,12 +60,12 @@ test("argv: no endpoint and no key on the command line (it is world-readable in 
   assert.doesNotMatch(text, /the-secret|AKIA-TEST|minio:9000/);
 });
 
-test("argv: root-owned, group-shared 0660/0770, umask 007, kernel-enforced", () => {
+test("argv: owned by the sandbox's uid, group-shared 0660/0770, umask 007, kernel-enforced", () => {
   const argv = buildHostS3MountArgs(cfg, target);
   const val = (flag) => argv[argv.indexOf(flag) + 1];
   assert.ok(argv.includes("--allow-other"), "dockerd (root) must traverse the mount");
   assert.ok(argv.includes("--default-permissions"), "allow_other without it opens every tenant to every host account");
-  assert.equal(val("--uid"), "0", "never a host account as owner");
+  assert.equal(val("--uid"), "2468", "the sandbox's uid: only the owner may chmod, and git chmods (bundle smoke 2026-10-24)");
   assert.equal(val("--gid"), String(cfg.workspaceGid));
   assert.equal(val("--file-perms"), "0660");
   assert.equal(val("--dir-perms"), "0770");
@@ -79,6 +79,18 @@ test("argv: a control socket per mount, at a short derived path", () => {
   assert.equal(addr, `unix://${rcSocketFor(cfg, target.mountPath)}`);
   assert.ok(rcSocketFor(cfg, target.mountPath).length <= 107, "sun_path limit");
   assert.notEqual(rcSocketFor(cfg, "/mnt/cac/a"), rcSocketFor(cfg, "/mnt/cac/b"));
+});
+
+test("the mount uid: 2468 by default, overridable, never 0 and never garbage", () => {
+  assert.equal(cfg.s3.uid, 2468);
+  assert.equal(resolveHostMountConfig({ ...S3_ENV, SANDBOX_HOST_MOUNT_S3_UID: "3000" }).s3.uid, 3000);
+  for (const bad of ["0", "-1", "abc", "1.5"]) {
+    assert.throws(
+      () => resolveHostMountConfig({ ...S3_ENV, SANDBOX_HOST_MOUNT_S3_UID: bad }),
+      (e) => e instanceof SandboxError && e.code === "config_error",
+      bad,
+    );
+  }
 });
 
 test("a socket directory too long for sun_path is refused at config time", () => {
@@ -177,6 +189,28 @@ test("invalidateObject: the weed driver does nothing (the filer streams its own 
   await m.shutdown();
 });
 
+test("reconcile never adopts the mount root, even when the root is itself a mount (the bundle's rshared bind)", async () => {
+  const h = harness();
+  const root = cfg.mountRoot;
+  const unmounted = [];
+  const removed = [];
+  const m = createHostMountManager({
+    config: cfg, ...h, readyIntervalMs: 1,
+    probeMounts: async () => new Set([root]),
+    readLeafDirs: async () => [root],
+    externalUnmount: async (p) => { unmounted.push(p); return true; },
+    rmdir: async (p) => { removed.push(p); },
+  });
+  const r = await m.reconcile();
+  assert.deepEqual(r.adopted, []);
+  assert.deepEqual(unmounted, [], "the root bind is never unmounted");
+  assert.deepEqual(removed, []);
+  await m.invalidateObject({ bucket: "cac", key: "users/u1/workspace/a.md" });
+  assert.deepEqual(h.rc, [], "and it never matches an invalidation");
+  await m.shutdown();
+  assert.deepEqual(unmounted, []);
+});
+
 // ---- the guest -------------------------------------------------------------
 
 test("withGitSafeDirectory: appends after the caller's own git config entries", () => {
@@ -187,17 +221,33 @@ test("withGitSafeDirectory: appends after the caller's own git config entries", 
   assert.equal(env.GIT_CONFIG_COUNT, "2");
 });
 
-async function runEnvFor(hostMount) {
+async function runArgsFor(hostMount) {
   const calls = [];
   const runner = async (args) => { calls.push(args); return args[0] === "run" ? "cid123\n" : ""; };
   const client = createDockerClient({ dockerRunner: runner, workspaceMountMode: "host", hostMount });
   await client.createSandbox({ workspaceMountPath: "/mnt/agent-fs/users/u1/workspace" });
-  const run = calls.find((a) => a[0] === "run");
+  return calls.find((a) => a[0] === "run");
+}
+async function runEnvFor(hostMount) {
+  const run = await runArgsFor(hostMount);
   return run.filter((_, i) => run[i - 1] === "-e");
 }
 const fakeMount = (driver) => ({
   driver,
+  sandboxUid: driver === HOST_MOUNT_DRIVER_S3 ? 2468 : null,
   async acquire({ bucket, subpath }) { return { mountPath: `/mnt/${bucket}/${subpath}`, release() {} }; },
+});
+
+test("an s3-driver sandbox runs as the mount's owner, primary group the workspace group; a weed one keeps the image's USER", async () => {
+  const s3 = await runArgsFor(fakeMount(HOST_MOUNT_DRIVER_S3));
+  assert.equal(s3[s3.indexOf("--user") + 1], "2468:2468");
+  assert.ok(!(await runArgsFor(fakeMount("weed"))).includes("--user"));
+});
+
+test("the manager tells docker.mjs which uid to run as only for s3", async () => {
+  const h = harness();
+  assert.equal(createHostMountManager({ config: cfg, ...h }).sandboxUid, 2468);
+  assert.equal(createHostMountManager({ config: resolveHostMountConfig({ ...S3_ENV, SANDBOX_HOST_MOUNT_DRIVER: "weed" }), ...h }).sandboxUid, null);
 });
 
 test("an s3-driver sandbox trusts its repositories; a weed-driver one is unchanged", async () => {

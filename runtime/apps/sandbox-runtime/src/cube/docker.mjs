@@ -448,6 +448,9 @@ export function buildDockerRunArgs({
   runtime = "",
   // 額外加入的群組（數字 gid）。host 掛載模式下是工作區群組，見 workspace-group.mjs。
   groupAdd = [],
+  // `uid:gid` to run as, or null for the image's own USER. Set only for the s3
+  // mount driver, where the sandbox must own its files (DEFAULT_S3_MOUNT_UID).
+  user = null,
 }) {
   const args = [
     "run", "-d", "--rm",
@@ -511,6 +514,7 @@ export function buildDockerRunArgs({
   // 工作區群組。沙盒要**以群組**讀寫它們，所以容器加入那個 gid —— 用數字，映像裡
   // 不需要有這個群組。docker exec（bash 工具、終端機、快照）沿用容器的附加群組。
   for (const gid of groupAdd) args.push("--group-add", String(gid));
+  if (user) args.push("--user", user);
   for (const bind of binds) args.push("-v", bind);
   if (entrypoint) args.push("--entrypoint", entrypoint);
   if (cpus) args.push("--cpus", String(cpus));
@@ -900,6 +904,11 @@ export function createDockerClient({
         storageSizeGb,
         runtime: dockerRuntime,
         groupAdd,
+        // The s3 mount shows every file as one uid; the sandbox has to be it or
+        // it cannot chmod (and git cannot work). Primary group = the workspace
+        // group, never the image's default: a uid with no passwd entry would
+        // otherwise run with gid 0.
+        user: hostMountMode && hostMount?.sandboxUid ? `${hostMount.sandboxUid}:${workspaceGid || hostMount.sandboxUid}` : null,
         fuseFlags: !hostMountMode,
         binds: [...officialHomeMount(userId, workspaceOwner), ...(hostMountMode
           ? [

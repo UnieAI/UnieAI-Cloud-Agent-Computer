@@ -30,7 +30,7 @@ function why() {
   if (process.env.CAC_S3_IT !== "1") return "set CAC_S3_IT=1 to run (needs root, /dev/fuse, fusermount3, rclone, an S3 endpoint)";
   if (process.getuid?.() !== 0) return "needs root: allow_other is refused to an unprivileged mounter";
   if (!existsSync("/dev/fuse")) return "no /dev/fuse";
-  for (const bin of ["rclone", "fusermount3"]) {
+  for (const bin of ["rclone", "fusermount3", "git", "setpriv"]) {
     try { execFileSync("sh", ["-c", `command -v ${bin}`]); } catch { return `${bin} is not installed`; }
   }
   for (const v of ["S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY", "S3_SECRET_KEY"]) if (!process.env[v]) return `${v} is unset`;
@@ -119,11 +119,43 @@ test("a file the sandbox writes reaches S3, where the file panel reads it", { sk
   assert.ok(landed, "the object exists on S3 within 15 s");
 });
 
-test("files are root-owned, group-shared, and closed to everyone else", { skip }, async () => {
+test("files belong to the sandbox's uid, group-shared, and closed to everyone else", { skip }, async () => {
   const st = await fs.stat(path.join(hold.mountPath, "from-agent.txt"));
-  assert.equal(st.uid, 0);
+  assert.equal(st.uid, config.s3.uid);
   assert.equal(st.gid, config.workspaceGid);
   assert.equal(st.mode & 0o777, 0o660);
+});
+
+// As the sandbox, not as root: root may chmod anything, so a root-run git
+// passes on a mount where the sandbox's git cannot even `init`. That is how
+// "git works" was once reported without ever having been true (bundle smoke
+// 2026-10-24: "chmod on .git/config.lock failed: Operation not permitted").
+test("git init, add and commit work as the sandbox's uid", { skip }, async () => {
+  const uid = config.s3.uid;
+  const gid = config.workspaceGid || uid;
+  const script = [
+    "set -e",
+    "git init -q repo && cd repo",
+    "echo x > f && chmod 755 f && git add f",
+    "git -c user.email=it@cac -c user.name=it commit -qm first",
+    "git log --oneline | wc -l",
+  ].join("\n");
+  // Bound where every parent is open, as docker binds it at /workspace: the
+  // temp root above the mount is 0700, and git stats every parent of its
+  // repository (measured: "Invalid path …: Permission denied").
+  const ws = await fs.mkdtemp("/cac-s3it-ws-");
+  execFileSync("mount", ["--bind", hold.mountPath, ws]);
+  try {
+    const out = execFileSync(
+      "setpriv",
+      [`--reuid=${uid}`, `--regid=${gid}`, "--clear-groups", "--", "env", "HOME=/tmp", "sh", "-c", script],
+      { cwd: ws, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60_000 },
+    );
+    assert.equal(out.trim(), "1");
+  } finally {
+    execFileSync("umount", [ws]);
+    await fs.rmdir(ws);
+  }
 });
 
 test("the last release unmounts and removes the socket", { skip }, async () => {

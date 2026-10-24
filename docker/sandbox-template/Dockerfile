@@ -9,8 +9,14 @@
 #   · /bin/sh and `sleep` — the host-mount boot command (cube/docker.mjs)
 #   · `mountpoint` (util-linux) — the readiness probe polls `mountpoint -q /workspace`
 #   · python3 or bash — the filer-exposure probe opens a TCP socket with them
-#   · a non-root USER — sandboxes run with no capabilities; uid 1000 joins the
-#     workspace group (SANDBOX_WORKSPACE_GID) to read and write /workspace
+#   · a non-root USER — sandboxes run with no capabilities. With the s3 mount
+#     driver the runtime starts the container as `--user 2468:2468`
+#     (SANDBOX_HOST_MOUNT_S3_UID : SANDBOX_WORKSPACE_GID), because rclone shows
+#     every file as one owner and only the owner may chmod (git does, on every
+#     config write). This image gives that uid a name and a home so the shell,
+#     pip --user and git's global config behave. 2468, not node's 1000: uid
+#     1000 is the login account on a stock Ubuntu host, and the owner of a
+#     tenant's files must be no host account.
 #
 #   docker build -f docker/sandbox-template/Dockerfile -t cac-sandbox:local .
 FROM node:22-bookworm-slim
@@ -20,8 +26,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && command -v mountpoint && command -v python3
 
-# node:22 already owns uid 1000 as `node`; rename it to the conventional `user`.
-RUN usermod -l user -d /home/user -m node && groupmod -n user node
+# node:22's `node` (1000) becomes `user` at 2468:2468 — see the header.
+RUN groupmod -n user -g 2468 node \
+    && usermod -l user -u 2468 -g 2468 -d /home/user -m node \
+    && [ "$(id -u user):$(id -g user)" = "2468:2468" ]
 
 USER user
 WORKDIR /workspace

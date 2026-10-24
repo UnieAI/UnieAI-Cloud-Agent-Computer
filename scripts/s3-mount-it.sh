@@ -36,7 +36,7 @@ docker run --rm --name "$ID-run" --network "container:$ID-minio" --memory 1g \
   -e S3_ACCESS_KEY=cacit -e S3_SECRET_KEY=cacit-secret-1 -e S3_REGION=us-east-1 \
   --entrypoint sh "$IMAGE" -c '
     set -e
-    (apt-get update -qq && apt-get install -y -qq --no-install-recommends fuse3) >/dev/null 2>&1
+    (apt-get update -qq && apt-get install -y -qq --no-install-recommends fuse3 git) >/dev/null 2>&1
     # Any HTTP answer means the gateway is up (MinIO 403s an unsigned GET too).
     for i in $(seq 1 60); do node -e "fetch(process.env.S3_ENDPOINT).then(()=>process.exit(0),()=>process.exit(1))" && break; sleep 1; done
     RCLONE_CONFIG=/dev/null RCLONE_S3_PROVIDER=Other RCLONE_S3_ENDPOINT=$S3_ENDPOINT RCLONE_S3_ACCESS_KEY_ID=$S3_ACCESS_KEY RCLONE_S3_SECRET_ACCESS_KEY=$S3_SECRET_KEY rclone mkdir :s3:$S3_BUCKET
@@ -47,4 +47,9 @@ docker run --rm --name "$ID-run" --network "container:$ID-minio" --memory 1g \
     echo "== doctor: missing bucket"; if S3_BUCKET=no-such-bucket node $D; then echo "DOCTOR PASSED A MISSING BUCKET"; exit 1; fi
     echo "== doctor: wrong key"; if S3_ACCESS_KEY=wrong node $D; then echo "DOCTOR PASSED A WRONG KEY"; exit 1; fi
     unset SANDBOX_WORKSPACE_MOUNT SANDBOX_HOST_MOUNT_DRIVER
-    cd /repo && node --test --test-timeout=60000 runtime/apps/sandbox-runtime/src/cube/host-mount-s3.integration.test.mjs'
+    # A skip is a failure here: this container exists to provide what every
+    # skip reason names, so a skip means the run proved nothing.
+    cd /repo && node --test --test-timeout=60000 runtime/apps/sandbox-runtime/src/cube/host-mount-s3.integration.test.mjs | tee /tmp/it.out
+    # (sh has no pipefail: the pipe exits with tee'"'"'s status, so check fail too.)
+    grep -q "^# fail 0$" /tmp/it.out || { echo "INTEGRATION TESTS FAILED"; exit 1; }
+    grep -q "^# skipped 0$" /tmp/it.out || { echo "INTEGRATION TESTS SKIPPED: $(grep -m1 "# SKIP" /tmp/it.out)"; exit 1; }'

@@ -117,11 +117,18 @@ echo "== the sandbox's view"
 OUT="$(run 'stat -c %a /workspace/agent.txt; id -u; env | grep -c "^S3_SECRET_KEY=\|^S3_ACCESS_KEY=" || true')"
 set -- $OUT
 [ "${1:-}" = 660 ] || fail "file mode ${1:-?}, expected 660"
-[ "${2:-}" != 0 ] || fail "the sandbox runs as root"
+[ "${2:-}" = 2468 ] || fail "the sandbox runs as uid ${2:-?}, expected 2468 (the mount's owner; root or a host account would be worse)"
 [ "${3:-}" = 0 ] || fail "the sandbox holds S3 keys"
 run 'python3 -c "import socket,sys;s=socket.socket();s.settimeout(3);sys.exit(0 if s.connect_ex((\"seaweedfs\",8888))==0 else 1)" 2>/dev/null; echo $?' > "$WORK/filer"
 [ "$(cat "$WORK/filer")" != 0 ] || fail "the sandbox can reach the store's filer"
 echo "ok  0660, non-root, no S3 key, no route to the store"
+
+echo "== the runtime's own view"
+# Warnings that each meant a real defect the first time (2026-10-24): the
+# per-turn /snapshots git could not init, and an invalidation hit the mount root.
+BAD="$(compose logs --no-color cac 2>/dev/null | grep -E '"event":"(pool\.baseline_snapshot_failed|host_mount\.invalidate_failed|host_mount\.reconciled)"' | grep -v '"adopted":0' || true)"
+[ -z "$BAD" ] || fail "runtime warned: $BAD"
+echo "ok  no snapshot, invalidation or reconcile warnings"
 
 echo "== release"
 curl -sf "${H[@]}" -X DELETE "$BASE/v1/sandboxes/$SBX" >/dev/null || fail "release"

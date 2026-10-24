@@ -210,6 +210,36 @@ export function rcSocketFor(cfg, mountPath) {
   return path.join(cfg.s3.rcDir, `${id}.sock`);
 }
 
+/**
+ * The uid every file on an `s3` mount belongs to, and the uid the sandbox runs
+ * as (docker.mjs passes `--user <uid>:<workspace gid>`). They must be the same
+ * number: rclone stores no owner, so every file shows as `--uid`, and with
+ * default_permissions the kernel lets only the owner chmod — git chmods its
+ * lock files on every config write, so a sandbox that is not the owner cannot
+ * `git init` (measured: "chmod on .git/config.lock failed: Operation not
+ * permitted", bundle smoke 2026-10-24). rclone itself ignores the mode change.
+ *
+ * NOT 1000 and never 0: like the workspace gid (workspace-group.mjs), it must
+ * be a number no host account has, because the owner of a tenant's files can
+ * read them from the host. uid 1000 is the login account on a stock Ubuntu
+ * host — that exact mapping was reverted once already (a142cae6).
+ */
+export const DEFAULT_S3_MOUNT_UID = 2468;
+
+function resolveS3MountUid(env) {
+  const raw = String(env?.SANDBOX_HOST_MOUNT_S3_UID ?? "").trim();
+  if (!raw) return DEFAULT_S3_MOUNT_UID;
+  const uid = /^[0-9]+$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isSafeInteger(uid) || uid <= 0) {
+    throw new SandboxError(
+      "config_error",
+      `SANDBOX_HOST_MOUNT_S3_UID=${JSON.stringify(raw)} must be a positive uid that no host account has (the sandbox runs as it; 0 would make the sandbox root)`,
+      500,
+    );
+  }
+  return uid;
+}
+
 /** Env → host-mount config. Pure; every field is overridable for tests. */
 export function resolveHostMountConfig(env = process.env) {
   return {
@@ -232,6 +262,8 @@ export function resolveHostMountConfig(env = process.env) {
        *  at once by invalidateObject. */
       dirCacheSec: intEnv(env?.SANDBOX_HOST_MOUNT_S3_DIR_CACHE_SEC, 5),
       rcDir: resolveRcDir(env),
+      /** Owner of every file on the mount AND the sandbox's uid. See above. */
+      uid: resolveS3MountUid(env),
     },
     /** Host directory that holds every mount. Mirrors the /mnt/<bucket>/<path>
      *  convention the allocate API already speaks. */
@@ -413,9 +445,11 @@ export function buildHostWeedMountArgs(cfg, { bucket, subpath, mountPath, readOn
  *
  * Mirrors the weed argv decision for decision:
  *   · `--allow-other`: dockerd (root) binds the mount; see the header.
- *   · uid 0 + the workspace group, files 0660 / dirs 0770: the same "map the
- *     group, never a uid" rule as buildHostWeedMountArgs. The container joins
- *     the group with --group-add.
+ *   · owner = the sandbox's own uid (DEFAULT_S3_MOUNT_UID, a number no host
+ *     account has), group = the workspace group, files 0660 / dirs 0770. Not
+ *     uid 0 as with weed: weed stores each file's owner, rclone shows every
+ *     file as `--uid`, and a sandbox that owns nothing cannot chmod, so git
+ *     cannot work. The container joins the group with --group-add.
  *   · `--vfs-cache-mode writes`: without it rclone refuses to open a file for
  *     read+write or to seek while writing, which is what editors, `sed -i`,
  *     git and sqlite do. A workspace that only takes sequential writes is not
@@ -432,7 +466,7 @@ export function buildHostS3MountArgs(cfg, { bucket, subpath, mountPath, readOnly
     `:s3:${bucket}/${subpath}`,
     mountPath,
     "--allow-other",
-    "--uid", "0",
+    "--uid", String(cfg.s3.uid),
     "--gid", String(gid),
     "--dir-perms", "0770",
     "--file-perms", "0660",
@@ -781,6 +815,9 @@ export function createHostMountManager({
   return {
     /** Which program mounts (weed | s3). docker.mjs reads it for the guest env. */
     driver: config.driver,
+    /** The uid the sandbox must run as to own its files (s3), or null when the
+     *  mount keeps each file's own owner (weed). See DEFAULT_S3_MOUNT_UID. */
+    sandboxUid: config.driver === HOST_MOUNT_DRIVER_S3 ? config.s3.uid : null,
 
     /**
      * Take a hold on the host mount for one workspace, mounting it if needed.
@@ -878,7 +915,15 @@ export function createHostMountManager({
         result.errors.push({ path: config.mountRoot, error: err?.message || String(err) });
         return result;
       }
+      const rootPath = path.resolve(config.mountRoot);
       for (const leaf of leaves) {
+        // This manager mounts at <root>/<bucket>/<subpath>, never at the root.
+        // The root shows up in /proc/mounts when it is itself a bind mount (the
+        // compose bundle binds it rshared so the mounts reach dockerd). Adopted,
+        // it got an idle timer that would have unmounted the bind — every
+        // workspace with it — and it matched every invalidation (bundle smoke
+        // 2026-10-24: "adopted":1 on an empty root).
+        if (leaf === rootPath) continue;
         if (mounts.has(leaf)) {
           if (await isMountLive(leaf)) {
             const entry = {
