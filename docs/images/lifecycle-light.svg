@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="520" viewBox="0 0 1160 520" role="img" aria-label="Cloud Agent Computer: sandbox lifecycle"><defs>
+<marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#475569"/></marker>
+<marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2b5fe8"/></marker>
+<marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0f9f6e"/></marker>
+<marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#e07b17"/></marker>
+<marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#7c4dff"/></marker>
+</defs><rect width="1160" height="520" rx="18" fill="#ffffff"/>
+<text x="40" y="52" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="22" font-weight="700" fill="#0f172a" text-anchor="start">Sandbox lifecycle</text>
+<text x="40" y="77" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13.5" font-weight="400" fill="#475569" text-anchor="start">Sandboxes are disposable; the workspace is not</text>
+<rect x="40" y="120" width="210" height="112" rx="16" fill="#ffffff" stroke="#475569" stroke-width="1.8"/>
+<text x="60" y="156" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#0f172a" text-anchor="start">Requested</text>
+<text x="60" y="182" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">POST /v1/sandboxes</text>
+<rect x="290" y="120" width="210" height="112" rx="16" fill="#eef3ff" stroke="#2b5fe8" stroke-width="1.8"/>
+<text x="310" y="156" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#0f172a" text-anchor="start">Allocated</text>
+<text x="310" y="182" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">workspace mounted,</text>
+<text x="310" y="202" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">container started</text>
+<rect x="540" y="120" width="290" height="112" rx="16" fill="#fff5ea" stroke="#e07b17" stroke-width="1.8"/>
+<text x="560" y="156" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#0f172a" text-anchor="start">Running</text>
+<text x="560" y="182" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">exec · terminals · processes</text>
+<text x="560" y="202" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">activity resets the idle timer</text>
+<rect x="870" y="120" width="210" height="112" rx="16" fill="#f4f0ff" stroke="#7c4dff" stroke-width="1.8"/>
+<text x="890" y="156" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#0f172a" text-anchor="start">Released</text>
+<text x="890" y="182" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">container removed,</text>
+<text x="890" y="202" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">final sync to S3</text>
+<path d="M252 176.0 L288 176.0" stroke="#475569" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+<path d="M502 176.0 L538 176.0" stroke="#2b5fe8" stroke-width="1.8" fill="none" marker-end="url(#aa)"/>
+<path d="M832 176.0 L868 176.0" stroke="#e07b17" stroke-width="1.8" fill="none" marker-end="url(#ao)"/>
+<path d="M640 120 C 640 80, 740 80, 740 118" stroke="#e07b17" stroke-width="1.8" fill="none" marker-end="url(#ao)"/>
+<text x="690" y="86" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#e07b17" text-anchor="middle">keep working</text>
+<text x="870" y="262" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11" font-weight="700" fill="#94a3b8" text-anchor="start">RELEASED WHEN</text>
+<text x="870" y="286" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">· idle for 15 min (never mid-exec)</text>
+<text x="870" y="307" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">· max lifetime is reached</text>
+<text x="870" y="328" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">· the caller deletes it</text>
+<text x="870" y="349" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">· its host goes away</text>
+<text x="870" y="370" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">· the deployment shuts down</text>
+<rect x="40" y="410" width="1080" height="70" rx="14" fill="#ecfbf4" stroke="#0f9f6e" stroke-width="1.8"/>
+<text x="64" y="440" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">Workspace — in your S3 bucket</text>
+<text x="64" y="462" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">outlives every sandbox · readable through the files API at any time · snapshots kept with it</text>
+<path d="M395 232 L395 406" stroke="#0f9f6e" stroke-width="1.8" fill="none" marker-end="url(#ag)" marker-start="url(#ag)" stroke-dasharray="5 5"/>
+<text x="405" y="272" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#0f9f6e" text-anchor="start">mounted live</text>
+<path d="M1080 232 L1080 406" stroke="#7c4dff" stroke-width="1.8" fill="none" marker-end="url(#av)"/>
+<text x="1070" y="396" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#7c4dff" text-anchor="end">final sync</text>
+<path d="M145 406 L145 236" stroke="#94a3b8" stroke-width="1.8" fill="none" marker-end="url(#ar)" stroke-dasharray="4 5"/>
+<text x="155" y="272" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#94a3b8" text-anchor="start">the next sandbox</text>
+<text x="155" y="288" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="600" fill="#94a3b8" text-anchor="start">mounts it again</text>
+</svg>

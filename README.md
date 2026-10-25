@@ -12,7 +12,7 @@ own, and there is no database to run.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-dark.svg">
-  <img alt="Architecture: callers (Rabi, UnieAI Studio, your app) call Cloud Agent Computer over /v1 with a per-caller key; CAC drives sandboxes through the Docker API and keeps workspaces in your S3 bucket, which it mounts into each sandbox with rclone." src="docs/images/architecture-light.svg" width="100%">
+  <img alt="Four decoupled layers: callers talk to a stateless control plane over /v1 HTTPS; the control plane runs sandboxes on compute hosts through the host tunnel; hosts and the files API use your S3 bucket over the S3 API. Features: streaming exec, terminals and processes, persistent workspaces, snapshots, tenant isolation, bring your own S3." src="docs/images/architecture-light.svg" width="100%">
 </picture>
 
 ## Features
@@ -92,6 +92,15 @@ curl -fsS "${H[@]}" -X DELETE $BASE/v1/sandboxes/$SBX
 
 ## How it works
 
+### Lifecycle
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/lifecycle-dark.svg">
+  <img alt="Sandbox lifecycle: requested, allocated (workspace mounted, container started), running (activity resets the idle timer), released (container removed, final sync). Released when idle for 15 minutes, at max lifetime, when the caller deletes it, when its host goes away, or when the deployment shuts down. The workspace lives in your S3 bucket, outlives every sandbox, and the next sandbox mounts it again." src="docs/images/lifecycle-light.svg" width="100%">
+</picture>
+
+### One request, end to end
+
 A caller asks for a sandbox, runs something in it, and reads the result from the
 workspace — the sandbox never holds a storage credential.
 
@@ -145,7 +154,7 @@ send `x-sandbox-user-id`. Streams are Server-Sent Events.
 
 | Area | Routes |
 | --- | --- |
-| Sandboxes | `POST /v1/sandboxes` · `GET /v1/sandboxes` · `DELETE /v1/sandboxes/{id}` · `POST /v1/sandboxes/{id}/resume` · `GET /v1/sessions/{sessionId}/sandbox` · `GET /v1/users/{userId}/sandbox` |
+| Sandboxes | `POST /v1/sandboxes` · `GET /v1/sandboxes` · `DELETE /v1/sandboxes/{id}` · `GET /v1/sessions/{sessionId}/sandbox` · `GET /v1/users/{userId}/sandbox` |
 | Exec | `POST /v1/sandboxes/{id}/exec` · `GET …/exec/{execId}/stream` · `DELETE …/exec/{execId}` |
 | Terminals | `POST /v1/sandboxes/{id}/terminals` · `GET …/terminals` · `GET …/terminals/{tid}/stream` · `POST …/terminals/{tid}/{input,resize,signal}` · `DELETE …/terminals/{tid}` |
 | Processes | `POST /v1/sandboxes/{id}/processes` · `GET …/processes` · `GET …/processes/{handle}/attach` · `POST …/processes/{handle}/stdin` · `DELETE …/processes/{handle}` |
