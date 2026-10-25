@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="780" viewBox="0 0 1160 780" role="img" aria-label="Cloud Agent Computer architecture">
+<defs>
+<marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#9da7b3"/></marker>
+<marker id="arrA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#7aa2ff"/></marker>
+<marker id="arrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#2fbf88"/></marker>
+<marker id="arrO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#f0a04b"/></marker>
+</defs>
+<rect width="1160" height="780" rx="18" fill="#0d1117"/>
+<text x="40" y="52" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="22" font-weight="700" fill="#e6edf3" text-anchor="start">Cloud Agent Computer</text>
+<text x="40" y="76" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13.5" font-weight="400" fill="#9da7b3" text-anchor="start">Isolated computers for AI agents — one HTTP API, your own S3</text>
+<text x="40" y="110" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11" font-weight="700" fill="#6e7681" text-anchor="start">CALLERS</text>
+<rect x="155" y="88" width="300" height="58" rx="12" fill="#0f1520" stroke="#30363d" stroke-width="1.4"/>
+<text x="305.0" y="112" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#e6edf3" text-anchor="middle">Rabi agent</text>
+<text x="305.0" y="132" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#6e7681" text-anchor="middle">copilot-v2</text>
+<path d="M305.0 146 L305.0 222" stroke="#7aa2ff" stroke-width="1.6" fill="none" marker-end="url(#arrA)"/>
+<rect x="505" y="88" width="300" height="58" rx="12" fill="#0f1520" stroke="#30363d" stroke-width="1.4"/>
+<text x="655.0" y="112" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#e6edf3" text-anchor="middle">UnieAI Studio</text>
+<text x="655.0" y="132" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#6e7681" text-anchor="middle">add-a-machine, billing</text>
+<path d="M655.0 146 L655.0 222" stroke="#7aa2ff" stroke-width="1.6" fill="none" marker-end="url(#arrA)"/>
+<rect x="855" y="88" width="300" height="58" rx="12" fill="#0f1520" stroke="#30363d" stroke-width="1.4"/>
+<text x="1005.0" y="112" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#e6edf3" text-anchor="middle">Your application</text>
+<text x="1005.0" y="132" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#6e7681" text-anchor="middle">any service with a key</text>
+<path d="M1005.0 146 L1005.0 222" stroke="#7aa2ff" stroke-width="1.6" fill="none" marker-end="url(#arrA)"/>
+<rect x="384.9" y="177" width="390.2" height="20" rx="10" fill="#0d1117"/>
+<text x="580.0" y="191" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="500" fill="#7aa2ff" text-anchor="middle">HTTPS  ·  /v1  ·  Bearer key  ·  one namespace per caller</text>
+<rect x="80" y="228" width="1000" height="196" rx="16" fill="#111b33" stroke="#5b8cff" stroke-width="1.8"/>
+<text x="104" y="262" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#e6edf3" text-anchor="start">Cloud Agent Computer</text>
+<text x="104" y="282" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" font-weight="400" fill="#9da7b3" text-anchor="start">sandbox-runtime  ·  stateless  ·  no database</text>
+<rect x="104" y="302" width="150" height="98" rx="10" fill="#0f1520" stroke="#30363d" stroke-width="1.4"/>
+<text x="116" y="328" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#e6edf3" text-anchor="start">Auth &amp; tenancy</text>
+<text x="116" y="352" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">keys → namespaces,</text>
+<text x="116" y="370" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">ownership enforced</text>
+<rect x="265" y="302" width="150" height="98" rx="10" fill="#0f1520" stroke="#30363d" stroke-width="1.4"/>
+<text x="277" y="328" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#e6edf3" text-anchor="start">Sandbox pool</text>
+<text x="277" y="352" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">allocate, resume,</text>
+<text x="277" y="370" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">quotas, cleanup</text>
+<rect x="426" y="302" width="150" height="98" rx="10" fill="#0f1520" stroke="#30363d" stroke-width="1.4"/>
+<text x="438" y="328" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#e6edf3" text-anchor="start">Exec · PTY</text>
+<text x="438" y="352" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">SSE streams, terminals,</text>
+<text x="438" y="370" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">processes, agents</text>
+<rect x="587" y="302" width="150" height="98" rx="10" fill="#0f1520" stroke="#30363d" stroke-width="1.4"/>
+<text x="599" y="328" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#e6edf3" text-anchor="start">Workspace &amp; files</text>
+<text x="599" y="352" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">read, write, CAS,</text>
+<text x="599" y="370" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">folders, upload, sync</text>
+<rect x="748" y="302" width="150" height="98" rx="10" fill="#0f1520" stroke="#30363d" stroke-width="1.4"/>
+<text x="760" y="328" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#e6edf3" text-anchor="start">Snapshots</text>
+<text x="760" y="352" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">snapshot, diff,</text>
+<text x="760" y="370" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">restore a file or tree</text>
+<rect x="909" y="302" width="150" height="98" rx="10" fill="#0f1520" stroke="#30363d" stroke-width="1.4"/>
+<text x="921" y="328" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" fill="#e6edf3" text-anchor="start">Storage doctor</text>
+<text x="921" y="352" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">checks the store</text>
+<text x="921" y="370" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">before it starts</text>
+<rect x="80" y="500" width="560" height="236" rx="16" fill="#161b22" stroke="#30363d" stroke-width="1.4"/>
+<text x="102" y="532" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#e6edf3" text-anchor="start">Docker host</text>
+<text x="102" y="552" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#6e7681" text-anchor="start">one network per deployment  ·  every container labelled with its instance</text>
+<rect x="102" y="572" width="162" height="140" rx="12" fill="#2a1d10" stroke="#f0a04b" stroke-width="1.4"/>
+<text x="116" y="598" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#f3b46f" text-anchor="start">sandbox 1</text>
+<text x="116" y="622" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· uid 2468, non-root</text>
+<text x="116" y="640" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· CPU / memory limits</text>
+<text x="116" y="658" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· /workspace  (mount)</text>
+<text x="116" y="676" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· no S3 keys</text>
+<text x="116" y="694" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· no route to the store</text>
+<rect x="280" y="572" width="162" height="140" rx="12" fill="#2a1d10" stroke="#f0a04b" stroke-width="1.4"/>
+<text x="294" y="598" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#f3b46f" text-anchor="start">sandbox 2</text>
+<text x="294" y="622" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· uid 2468, non-root</text>
+<text x="294" y="640" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· CPU / memory limits</text>
+<text x="294" y="658" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· /workspace  (mount)</text>
+<text x="294" y="676" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· no S3 keys</text>
+<text x="294" y="694" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· no route to the store</text>
+<rect x="458" y="572" width="162" height="140" rx="12" fill="#2a1d10" stroke="#f0a04b" stroke-width="1.4"/>
+<text x="472" y="598" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#f3b46f" text-anchor="start">sandbox 3</text>
+<text x="472" y="622" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· uid 2468, non-root</text>
+<text x="472" y="640" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· CPU / memory limits</text>
+<text x="472" y="658" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· /workspace  (mount)</text>
+<text x="472" y="676" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· no S3 keys</text>
+<text x="472" y="694" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9da7b3" text-anchor="start">· no route to the store</text>
+<path d="M360 424 L360 496" stroke="#9da7b3" stroke-width="1.6" fill="none" marker-end="url(#arr)"/>
+<rect x="240.8" y="449" width="238.39999999999998" height="20" rx="10" fill="#0d1117"/>
+<text x="360" y="463" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="500" fill="#9da7b3" text-anchor="middle">Docker API: create · exec · attach</text>
+<rect x="700" y="500" width="380" height="236" rx="16" fill="#0d2620" stroke="#2fbf88" stroke-width="1.4"/>
+<text x="722" y="532" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="15" font-weight="700" fill="#e6edf3" text-anchor="start">Your S3 bucket</text>
+<text x="722" y="552" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#5fd3a5" text-anchor="start">SeaweedFS (bundled) · MinIO · AWS S3 · any S3 API</text>
+<rect x="722" y="572" width="336" height="30" rx="8" fill="#0f1520" stroke="#30363d" stroke-width="1.4"/>
+<text x="736" y="592" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="400" fill="#9da7b3" text-anchor="start">&lt;namespace&gt;/users/&lt;id&gt;/workspace/…</text>
+<rect x="722" y="610" width="336" height="30" rx="8" fill="#0f1520" stroke="#30363d" stroke-width="1.4"/>
+<text x="736" y="630" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="400" fill="#9da7b3" text-anchor="start">&lt;namespace&gt;/groups/&lt;id&gt;/workspace/…</text>
+<rect x="722" y="648" width="336" height="30" rx="8" fill="#0f1520" stroke="#30363d" stroke-width="1.4"/>
+<text x="736" y="668" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="400" fill="#9da7b3" text-anchor="start">manifest — compare-and-swap</text>
+<rect x="722" y="686" width="336" height="30" rx="8" fill="#0f1520" stroke="#30363d" stroke-width="1.4"/>
+<text x="736" y="706" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="400" fill="#9da7b3" text-anchor="start">snapshots (git)</text>
+<path d="M840 424 L840 496" stroke="#2fbf88" stroke-width="1.6" fill="none" marker-end="url(#arrG)"/>
+<rect x="740.6" y="449" width="198.79999999999998" height="20" rx="10" fill="#0d1117"/>
+<text x="840" y="463" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="500" fill="#5fd3a5" text-anchor="middle">S3 API: files · manifest CAS</text>
+<path d="M696 660 L644 660" stroke="#f0a04b" stroke-width="1.6" fill="none" marker-end="url(#arrO)" marker-start="url(#arrO)"/>
+<rect x="643.2" y="633" width="53.599999999999994" height="20" rx="10" fill="#0d1117"/>
+<text x="670.0" y="647" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12" font-weight="500" fill="#f3b46f" text-anchor="middle">rclone</text>
+<text x="670.0" y="682" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="10.5" fill="#6e7681" text-anchor="middle">mounted by CAC,</text>
+<text x="670.0" y="696" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="10.5" fill="#6e7681" text-anchor="middle">bound in</text>
+<rect x="860" y="30" width="260" height="50" rx="12" fill="none" stroke="#6e7681" stroke-width="1.4" stroke-dasharray="5 5"/>
+<text x="990" y="52" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="12.5" font-weight="600" fill="#9da7b3" text-anchor="middle">Next (P3): host agent</text>
+<text x="990" y="70" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#6e7681" text-anchor="middle">machines dial in and serve sandboxes</text>
+</svg>
